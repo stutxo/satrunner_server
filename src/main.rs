@@ -14,13 +14,24 @@ use warp::Filter;
 static NEXT_PLAYER_ID: AtomicUsize = AtomicUsize::new(1);
 
 type Users = Arc<RwLock<HashMap<usize, mpsc::UnboundedSender<Message>>>>;
-type PlayerInput = Arc<RwLock<HashMap<usize, Vec2>>>;
-type GameState = Arc<RwLock<HashMap<usize, Vec2>>>;
+type GameState = Arc<RwLock<HashMap<usize, Player>>>;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Vec2 {
     pub x: f32,
     pub y: f32,
+}
+
+impl Default for Vec2 {
+    fn default() -> Self {
+        Vec2 { x: 0.0, y: 0.0 }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct Player {
+    pub position: Vec2,
+    pub target: Vec2,
 }
 
 #[tokio::main]
@@ -33,34 +44,24 @@ async fn main() {
     let game_state = GameState::default();
     let game_state_task = game_state.clone();
 
-    let player_input = PlayerInput::default();
-    let player_input_task = player_input.clone();
-
     tokio::spawn(async move {
-        game_engine(game_state_task, player_input_task).await;
+        game_engine(game_state_task).await;
     });
 
     let game_state = warp::any().map(move || game_state.clone());
-    let player_input = warp::any().map(move || player_input.clone());
 
     let routes = warp::path("play")
         .and(warp::ws())
         .and(users)
         .and(game_state)
-        .and(player_input)
-        .map(|ws: warp::ws::Ws, users, game_state, player_input| {
-            ws.on_upgrade(move |socket| user_connected(socket, users, game_state, player_input))
+        .map(|ws: warp::ws::Ws, users, game_state| {
+            ws.on_upgrade(move |socket| user_connected(socket, users, game_state))
         });
 
     warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
 }
 
-async fn user_connected(
-    ws: WebSocket,
-    users: Users,
-    game_state: GameState,
-    player_input: PlayerInput,
-) {
+async fn user_connected(ws: WebSocket, users: Users, game_state: GameState) {
     let client_id = NEXT_PLAYER_ID.fetch_add(1, Ordering::Relaxed);
 
     eprintln!("new player: {}", client_id);
@@ -68,7 +69,7 @@ async fn user_connected(
     game_state
         .write()
         .await
-        .insert(client_id, Vec2 { x: 0.0, y: 0.0 });
+        .insert(client_id, Player::default());
     eprintln!("Player added to game_state: {}", client_id);
 
     let (mut user_ws_tx, mut user_ws_rx) = ws.split();
@@ -95,9 +96,14 @@ async fn user_connected(
                 eprintln!("MSG: {:?}", msg);
                 if let Ok(msg_str) = msg.to_str() {
                     match serde_json::from_str::<Vec2>(msg_str) {
-                        Ok(new_position) => {
-                            player_input.write().await.insert(client_id, new_position);
-                            eprintln!("PLAYER: {:?}, TARGET: {:?}", client_id, msg);
+                        Ok(new_input) => {
+                            let mut game_state = game_state.write().await;
+                            if let Some(player) = game_state.get_mut(&client_id) {
+                                player.target = new_input;
+                                eprintln!("PLAYER: {:?}, TARGET: {:?}", client_id, msg);
+                            } else {
+                                eprintln!("No player found for client_id: {}", client_id);
+                            }
                         }
                         Err(e) => {
                             eprintln!("Failed to parse message as Vec2: {:?}", e);
@@ -113,33 +119,24 @@ async fn user_connected(
             }
         };
     }
-    user_disconnected(client_id, &users, game_state, player_input).await;
+    user_disconnected(client_id, &users, game_state).await;
 }
 
-async fn user_disconnected(
-    client_id: usize,
-    users: &Users,
-    game_state: GameState,
-    player_input: PlayerInput,
-) {
+async fn user_disconnected(client_id: usize, users: &Users, game_state: GameState) {
     eprintln!("player disconnected: {}", client_id);
     users.write().await.remove(&client_id);
     game_state.write().await.remove(&client_id);
-    player_input.write().await.remove(&client_id);
 }
 
-async fn game_engine(game_state: GameState, player_input: PlayerInput) {
+async fn game_engine(game_state: GameState) {
     loop {
         let mut game_state = game_state.write().await;
-        let player_input = player_input.read().await;
-        for (id, position) in game_state.iter_mut() {
-            if let Some(target) = player_input.get(id) {
-                //here we would calculate the new position based on the target location and the current position
-                eprintln!(
-                    "Player: {:?}, Position: {:?}, Target {:?}",
-                    id, position, target
-                );
-            }
+
+        for (id, player) in game_state.iter_mut() {
+            eprint!(
+                "Player: {:?}, current pos {:?}, input pos {:?} ",
+                id, player.position, player.target
+            );
         }
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
     }
