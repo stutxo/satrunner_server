@@ -11,16 +11,17 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use warp::ws::{Message, WebSocket};
 use warp::Filter;
 
-/// Our global unique user id counter.
-static NEXT_USER_ID: AtomicUsize = AtomicUsize::new(1);
+static NEXT_PLAYER_ID: AtomicUsize = AtomicUsize::new(1);
 
-/// Our state of currently connected users.
-///
-/// - Key is their id
-/// - Value is a sender of `warp::ws::Message`
 type Users = Arc<RwLock<HashMap<usize, mpsc::UnboundedSender<Message>>>>;
 type PlayerInput = Arc<RwLock<HashMap<usize, Vec2>>>;
 type GameState = Arc<RwLock<HashMap<usize, Vec2>>>;
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Vec2 {
+    pub x: f32,
+    pub y: f32,
+}
 
 #[tokio::main]
 async fn main() {
@@ -60,7 +61,7 @@ async fn user_connected(
     game_state: GameState,
     player_input: PlayerInput,
 ) {
-    let client_id = NEXT_USER_ID.fetch_add(1, Ordering::Relaxed);
+    let client_id = NEXT_PLAYER_ID.fetch_add(1, Ordering::Relaxed);
 
     eprintln!("new player: {}", client_id);
 
@@ -91,12 +92,20 @@ async fn user_connected(
     while let Some(result) = user_ws_rx.next().await {
         match result {
             Ok(msg) => {
-                let new_position: Vec2 = serde_json::from_str(msg.to_str().unwrap()).unwrap();
-
-                player_input.write().await.insert(client_id, new_position);
-
-                eprintln!("PLAYER: {:?}, TARGET: {:?}", client_id, msg);
-                msg
+                eprintln!("MSG: {:?}", msg);
+                if let Ok(msg_str) = msg.to_str() {
+                    match serde_json::from_str::<Vec2>(msg_str) {
+                        Ok(new_position) => {
+                            player_input.write().await.insert(client_id, new_position);
+                            eprintln!("PLAYER: {:?}, TARGET: {:?}", client_id, msg);
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to parse message as Vec2: {:?}", e);
+                        }
+                    }
+                } else {
+                    eprintln!("other message: {:?}", msg);
+                }
             }
             Err(e) => {
                 eprintln!("websocket error(uid={}): {}", client_id, e);
@@ -104,13 +113,19 @@ async fn user_connected(
             }
         };
     }
-    user_disconnected(client_id, &users, game_state).await;
+    user_disconnected(client_id, &users, game_state, player_input).await;
 }
 
-async fn user_disconnected(client_id: usize, users: &Users, game_state: GameState) {
+async fn user_disconnected(
+    client_id: usize,
+    users: &Users,
+    game_state: GameState,
+    player_input: PlayerInput,
+) {
     eprintln!("player disconnected: {}", client_id);
     users.write().await.remove(&client_id);
     game_state.write().await.remove(&client_id);
+    player_input.write().await.remove(&client_id);
 }
 
 async fn game_engine(game_state: GameState, player_input: PlayerInput) {
@@ -128,12 +143,6 @@ async fn game_engine(game_state: GameState, player_input: PlayerInput) {
         }
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
     }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Vec2 {
-    pub x: f32,
-    pub y: f32,
 }
 
 //new player joins and are added to hashmap of their id and their POS::new which is 0/0 for both
