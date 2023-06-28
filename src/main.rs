@@ -20,10 +20,19 @@ type GameState = Arc<RwLock<HashMap<usize, Player>>>;
 pub const WORLD_BOUNDS: f32 = 300.0;
 const PLAYER_SPEED: f32 = 1.0;
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Player {
     pub position: Vec2,
     pub target: Vec2,
+}
+
+impl Default for Player {
+    fn default() -> Self {
+        Self {
+            position: Vec2::new(0.0, -50.0),
+            target: Vec2::new(0.0, -50.0),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -62,12 +71,13 @@ async fn main() {
             ws.on_upgrade(move |socket| user_connected(socket, users, game_state))
         });
 
+    eprintln!("ws://localhost:3030/play");
     warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
 }
 
 async fn user_connected(ws: WebSocket, users: Users, game_state: GameState) {
     let client_id = NEXT_PLAYER_ID.fetch_add(1, Ordering::Relaxed);
-
+    eprintln!("player connected: {}", client_id);
     game_state
         .write()
         .await
@@ -129,7 +139,6 @@ async fn user_disconnected(client_id: usize, users: &Users, game_state: GameStat
 }
 
 async fn game_engine(game_state: GameState, users: Users) {
-    let mut game_tick = 0;
     let mut players_pos: Vec<f32> = Vec::new();
     loop {
         let mut game_state = game_state.write().await;
@@ -138,12 +147,12 @@ async fn game_engine(game_state: GameState, users: Users) {
             let current_position = Vec2::new(player.position.x, player.position.y);
             let direction = Vec2::new(player.target.x, player.target.y) - current_position;
             let distance_to_target = direction.length();
-            eprintln!("distance to target: {:?}", distance_to_target);
+
             if distance_to_target > 0.0 {
                 let normalized_direction = direction / distance_to_target;
                 let movement = normalized_direction * PLAYER_SPEED;
 
-                let new_position = current_position + movement;
+                let new_position = player.position + movement;
 
                 if new_position.x.abs() <= WORLD_BOUNDS && new_position.y.abs() <= WORLD_BOUNDS {
                     if movement.length() < distance_to_target {
@@ -153,33 +162,22 @@ async fn game_engine(game_state: GameState, users: Users) {
                     }
                 }
             }
-
+            eprintln!("test: {}", player.position.x);
             players_pos.push(player.position.x);
         }
 
         let msg = serde_json::to_string(&players_pos).expect("Failed to serialize message");
 
-        for (_id, tx) in users.read().await.iter() {
-            if let Err(disconnected) = tx.send(Message::text(msg.clone())) {
+        let user_channels: Vec<_> = users.read().await.values().cloned().collect();
+
+        for tx in user_channels {
+            if let Err(disconnected) = tx.send(Message::text(&msg)) {
                 eprintln!("Failed to send message to client: {}", disconnected);
             }
         }
 
         players_pos.clear();
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
-        game_tick += 1;
-        eprintln!(
-            "################### {:?} ########################",
-            game_tick
-        );
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
     }
 }
-
-//new player joins and are added to hashmap of their id and their POS::new which is 0/0 for both
-
-// match input - server looks up id in hashmap and updates the target location for that player, overriding one if it is already there.
-
-//server main function checks the gamestate hash for all connected id's target location and calculates new position based on their current position for that tick. It updates players current position in gamestate hashmap and then stores them in a vec and sends them to all clients
-
-//next tick the server main fn does the same thing, if the target location has changed since the last tick (player has clicked to move again) then the server will use this new target as it has been replaced in the gamestate hashmap when input received.
