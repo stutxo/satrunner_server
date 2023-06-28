@@ -46,6 +46,12 @@ pub struct InputVec2 {
     pub y: f32,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PlayerPositions {
+    pub local_pos: f32,
+    pub other_pos: Vec<f32>,
+}
+
 #[tokio::main]
 async fn main() {
     pretty_env_logger::init();
@@ -139,11 +145,11 @@ async fn user_disconnected(client_id: usize, users: &Users, game_state: GameStat
 }
 
 async fn game_engine(game_state: GameState, users: Users) {
-    let mut players_pos: Vec<f32> = Vec::new();
     loop {
         let mut game_state = game_state.write().await;
+        let mut all_positions: HashMap<usize, Vec2> = HashMap::new();
 
-        for (_id, player) in game_state.iter_mut() {
+        for (id, player) in game_state.iter_mut() {
             let current_position = Vec2::new(player.position.x, player.position.y);
             let direction = Vec2::new(player.target.x, player.target.y) - current_position;
             let distance_to_target = direction.length();
@@ -163,20 +169,34 @@ async fn game_engine(game_state: GameState, users: Users) {
                 }
             }
             eprintln!("test: {}", player.position.x);
-            players_pos.push(player.position.x);
+
+            all_positions.insert(*id, player.position);
         }
 
-        let msg = serde_json::to_string(&players_pos).expect("Failed to serialize message");
+        let user_channels: Vec<_> = users.read().await.keys().cloned().collect();
 
-        let user_channels: Vec<_> = users.read().await.values().cloned().collect();
+        for id in user_channels {
+            let my_pos = all_positions.get(&id).unwrap();
 
-        for tx in user_channels {
-            if let Err(disconnected) = tx.send(Message::text(&msg)) {
-                eprintln!("Failed to send message to client: {}", disconnected);
+            let other_pos: Vec<f32> = all_positions
+                .iter()
+                .filter(|(&other_id, _)| other_id != id)
+                .map(|(_, pos)| pos.x)
+                .collect();
+
+            let player_positions = PlayerPositions {
+                local_pos: my_pos.x,
+                other_pos,
+            };
+            let msg =
+                serde_json::to_string(&player_positions).expect("Failed to serialize message");
+
+            if let Some(tx) = users.read().await.get(&id) {
+                if let Err(disconnected) = tx.send(Message::text(&msg)) {
+                    eprintln!("Failed to send message to client: {}", disconnected);
+                }
             }
         }
-
-        players_pos.clear();
 
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
     }
