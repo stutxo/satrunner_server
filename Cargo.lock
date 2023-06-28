@@ -231,6 +231,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "glam"
+version = "0.24.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42218cb640844e3872cc3c153dc975229e080a6c4733b34709ef445610550226"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "h2"
 version = "0.3.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -688,6 +697,7 @@ name = "satrunner_server"
 version = "0.1.0"
 dependencies = [
  "futures-util",
+ "glam",
  "log",
  "pretty_env_logger",
  "serde",

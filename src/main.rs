@@ -5,6 +5,7 @@ use std::sync::{
 };
 
 use futures_util::{SinkExt, StreamExt, TryFutureExt};
+use glam::f32::Vec2;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, RwLock};
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -16,17 +17,8 @@ static NEXT_PLAYER_ID: AtomicUsize = AtomicUsize::new(1);
 type Users = Arc<RwLock<HashMap<usize, mpsc::UnboundedSender<Message>>>>;
 type GameState = Arc<RwLock<HashMap<usize, Player>>>;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Vec2 {
-    pub x: f32,
-    pub y: f32,
-}
-
-impl Default for Vec2 {
-    fn default() -> Self {
-        Vec2 { x: 0.0, y: 0.0 }
-    }
-}
+pub const WORLD_BOUNDS: f32 = 300.0;
+const PLAYER_SPEED: f32 = 1.0;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct Player {
@@ -34,20 +26,32 @@ pub struct Player {
     pub target: Vec2,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ClientMsg {
+    pub input: InputVec2,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct InputVec2 {
+    pub x: f32,
+    pub y: f32,
+}
+
 #[tokio::main]
 async fn main() {
     pretty_env_logger::init();
 
     let users = Users::default();
-    let users = warp::any().map(move || users.clone());
+    let users_task = users.clone();
 
     let game_state = GameState::default();
     let game_state_task = game_state.clone();
 
     tokio::spawn(async move {
-        game_engine(game_state_task).await;
+        game_engine(game_state_task, users_task).await;
     });
 
+    let users = warp::any().map(move || users.clone());
     let game_state = warp::any().map(move || game_state.clone());
 
     let routes = warp::path("play")
@@ -64,13 +68,10 @@ async fn main() {
 async fn user_connected(ws: WebSocket, users: Users, game_state: GameState) {
     let client_id = NEXT_PLAYER_ID.fetch_add(1, Ordering::Relaxed);
 
-    eprintln!("new player: {}", client_id);
-
     game_state
         .write()
         .await
         .insert(client_id, Player::default());
-    eprintln!("Player added to game_state: {}", client_id);
 
     let (mut user_ws_tx, mut user_ws_rx) = ws.split();
 
@@ -93,13 +94,12 @@ async fn user_connected(ws: WebSocket, users: Users, game_state: GameState) {
     while let Some(result) = user_ws_rx.next().await {
         match result {
             Ok(msg) => {
-                eprintln!("MSG: {:?}", msg);
                 if let Ok(msg_str) = msg.to_str() {
-                    match serde_json::from_str::<Vec2>(msg_str) {
+                    match serde_json::from_str::<ClientMsg>(msg_str) {
                         Ok(new_input) => {
                             let mut game_state = game_state.write().await;
                             if let Some(player) = game_state.get_mut(&client_id) {
-                                player.target = new_input;
+                                player.target = Vec2::new(new_input.input.x, new_input.input.y);
                                 eprintln!("PLAYER: {:?}, TARGET: {:?}", client_id, msg);
                             } else {
                                 eprintln!("No player found for client_id: {}", client_id);
@@ -128,17 +128,51 @@ async fn user_disconnected(client_id: usize, users: &Users, game_state: GameStat
     game_state.write().await.remove(&client_id);
 }
 
-async fn game_engine(game_state: GameState) {
+async fn game_engine(game_state: GameState, users: Users) {
+    let mut game_tick = 0;
+    let mut players_pos: Vec<f32> = Vec::new();
     loop {
         let mut game_state = game_state.write().await;
 
-        for (id, player) in game_state.iter_mut() {
-            eprint!(
-                "Player: {:?}, current pos {:?}, input pos {:?} ",
-                id, player.position, player.target
-            );
+        for (_id, player) in game_state.iter_mut() {
+            let current_position = Vec2::new(player.position.x, player.position.y);
+            let direction = Vec2::new(player.target.x, player.target.y) - current_position;
+            let distance_to_target = direction.length();
+            eprintln!("distance to target: {:?}", distance_to_target);
+            if distance_to_target > 0.0 {
+                let normalized_direction = direction / distance_to_target;
+                let movement = normalized_direction * PLAYER_SPEED;
+
+                let new_position = current_position + movement;
+
+                if new_position.x.abs() <= WORLD_BOUNDS && new_position.y.abs() <= WORLD_BOUNDS {
+                    if movement.length() < distance_to_target {
+                        player.position += Vec2::new(movement.x, 0.0);
+                    } else {
+                        player.position = Vec2::new(player.target.x, -50.0);
+                    }
+                }
+            }
+
+            players_pos.push(player.position.x);
         }
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        let msg = serde_json::to_string(&players_pos).expect("Failed to serialize message");
+
+        for (_id, tx) in users.read().await.iter() {
+            if let Err(disconnected) = tx.send(Message::text(msg.clone())) {
+                eprintln!("Failed to send message to client: {}", disconnected);
+            }
+        }
+
+        players_pos.clear();
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+        game_tick += 1;
+        eprintln!(
+            "################### {:?} ########################",
+            game_tick
+        );
     }
 }
 
