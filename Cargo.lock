@@ -700,6 +700,7 @@ dependencies = [
  "glam",
  "log",
  "pretty_env_logger",
+ "rand",
  "serde",
  "serde_json",
  "tokio",

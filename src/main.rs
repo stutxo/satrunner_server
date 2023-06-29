@@ -6,6 +6,8 @@ use std::sync::{
 
 use futures_util::{SinkExt, StreamExt, TryFutureExt};
 use glam::f32::Vec2;
+use glam::Vec3;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, RwLock};
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -19,6 +21,7 @@ type GameState = Arc<RwLock<HashMap<usize, Player>>>;
 
 pub const WORLD_BOUNDS: f32 = 300.0;
 const PLAYER_SPEED: f32 = 1.0;
+const FALL_SPEED: f32 = 0.5;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Player {
@@ -50,6 +53,7 @@ pub struct InputVec2 {
 pub struct PlayerPositions {
     pub local_pos: f32,
     pub other_pos: Vec<f32>,
+    pub dots: Vec<Vec3>,
 }
 
 #[tokio::main]
@@ -145,6 +149,7 @@ async fn user_disconnected(client_id: usize, users: &Users, game_state: GameStat
 }
 
 async fn game_engine(game_state: GameState, users: Users) {
+    let mut dots = Vec::new();
     loop {
         let mut game_state = game_state.write().await;
         let mut all_positions: HashMap<usize, Vec2> = HashMap::new();
@@ -168,12 +173,13 @@ async fn game_engine(game_state: GameState, users: Users) {
                     }
                 }
             }
-            eprintln!("test: {}", player.position.x);
 
             all_positions.insert(*id, player.position);
         }
 
         let user_channels: Vec<_> = users.read().await.keys().cloned().collect();
+
+        let dots = spawn_dots(&mut dots, &game_state).await;
 
         for id in user_channels {
             let my_pos = all_positions.get(&id).unwrap();
@@ -187,6 +193,7 @@ async fn game_engine(game_state: GameState, users: Users) {
             let player_positions = PlayerPositions {
                 local_pos: my_pos.x,
                 other_pos,
+                dots: dots.clone(),
             };
             let msg =
                 serde_json::to_string(&player_positions).expect("Failed to serialize message");
@@ -200,4 +207,53 @@ async fn game_engine(game_state: GameState, users: Users) {
 
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
     }
+}
+
+async fn spawn_dots(dots: &mut Vec<Vec3>, game_state: &HashMap<usize, Player>) -> Vec<Vec3> {
+    let pp: Vec<_> = game_state.values().map(|p| p.position).collect();
+
+    let mut rng = rand::thread_rng();
+    let num_balls: i32 = rng.gen_range(1..10);
+
+    for _ in 0..num_balls {
+        let x_position: f32 = rng.gen_range(-WORLD_BOUNDS..WORLD_BOUNDS);
+        let y_position: f32 = 25.;
+
+        let dot_start = Vec3::new(x_position, y_position, 0.1);
+
+        dots.push(dot_start);
+    }
+
+    for dot in dots.iter_mut() {
+        dot.x += FALL_SPEED * 0.0;
+        dot.y += FALL_SPEED * -1.0;
+    }
+
+    let threshold_distance: f32 = 1.0;
+    let mut hit_dots = Vec::new();
+
+    dots.retain(|dot| {
+        let dot_vec2 = Vec2::new(dot.x, dot.y);
+        let distance_to_players: Vec<f32> = pp
+            .iter()
+            .map(|player_pos| (*player_pos - dot_vec2).length())
+            .collect();
+
+        let hit = distance_to_players
+            .iter()
+            .any(|&distance| distance <= threshold_distance);
+
+        if hit {
+            hit_dots.push(*dot);
+        }
+
+        !hit
+    });
+
+    // print the hit dots
+    for dot in hit_dots {
+        eprintln!("Hit dot: {:?}", dot);
+    }
+
+    dots.to_vec()
 }
