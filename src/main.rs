@@ -27,6 +27,7 @@ const FALL_SPEED: f32 = 0.5;
 pub struct Player {
     pub position: Vec2,
     pub target: Vec2,
+    pub index: usize,
 }
 
 impl Default for Player {
@@ -34,6 +35,7 @@ impl Default for Player {
         Self {
             position: Vec2::new(0.0, -50.0),
             target: Vec2::new(0.0, -50.0),
+            index: 0,
         }
     }
 }
@@ -41,6 +43,7 @@ impl Default for Player {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ClientMsg {
     pub input: InputVec2,
+    pub index: usize,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -54,6 +57,12 @@ pub struct PlayerPositions {
     pub local_pos: f32,
     pub other_pos: Vec<f32>,
     pub dots: Vec<Vec3>,
+    index: usize,
+}
+
+pub struct Index {
+    pub position: Vec2,
+    index: usize,
 }
 
 #[tokio::main]
@@ -100,6 +109,7 @@ async fn user_connected(ws: WebSocket, users: Users, game_state: GameState) {
 
     tokio::task::spawn(async move {
         while let Some(message) = rx.next().await {
+            //eprintln!("OUTGOING: {:?}", message);
             user_ws_tx
                 .send(message)
                 .unwrap_or_else(|e| {
@@ -120,6 +130,7 @@ async fn user_connected(ws: WebSocket, users: Users, game_state: GameState) {
                             let mut game_state = game_state.write().await;
                             if let Some(player) = game_state.get_mut(&client_id) {
                                 player.target = Vec2::new(new_input.input.x, new_input.input.y);
+                                player.index = new_input.index;
                                 eprintln!("PLAYER: {:?}, TARGET: {:?}", client_id, msg);
                             } else {
                                 eprintln!("No player found for client_id: {}", client_id);
@@ -152,7 +163,7 @@ async fn game_engine(game_state: GameState, users: Users) {
     let mut dots = Vec::new();
     loop {
         let mut game_state = game_state.write().await;
-        let mut all_positions: HashMap<usize, Vec2> = HashMap::new();
+        let mut all_positions: HashMap<usize, Index> = HashMap::new();
 
         for (id, player) in game_state.iter_mut() {
             let current_position = Vec2::new(player.position.x, player.position.y);
@@ -174,7 +185,13 @@ async fn game_engine(game_state: GameState, users: Users) {
                 }
             }
 
-            all_positions.insert(*id, player.position);
+            all_positions.insert(
+                *id,
+                Index {
+                    position: player.position,
+                    index: player.index,
+                },
+            );
         }
 
         let user_channels: Vec<_> = users.read().await.keys().cloned().collect();
@@ -182,18 +199,19 @@ async fn game_engine(game_state: GameState, users: Users) {
         let dots = spawn_dots(&mut dots, &game_state).await;
 
         for id in user_channels {
-            let my_pos = all_positions.get(&id).unwrap();
+            let local_pos = all_positions.get(&id).unwrap();
 
             let other_pos: Vec<f32> = all_positions
                 .iter()
                 .filter(|(&other_id, _)| other_id != id)
-                .map(|(_, pos)| pos.x)
+                .map(|(_, pos)| pos.position.x)
                 .collect();
-
+            eprintln!("other_pos: {:?}", other_pos);
             let player_positions = PlayerPositions {
-                local_pos: my_pos.x,
+                local_pos: local_pos.position.x,
                 other_pos,
                 dots: dots.clone(),
+                index: local_pos.index,
             };
             let msg =
                 serde_json::to_string(&player_positions).expect("Failed to serialize message");
@@ -250,10 +268,9 @@ async fn spawn_dots(dots: &mut Vec<Vec3>, game_state: &HashMap<usize, Player>) -
         !hit
     });
 
-    // print the hit dots
-    for dot in hit_dots {
-        eprintln!("Hit dot: {:?}", dot);
-    }
+    // for dot in hit_dots {
+    //     // eprintln!("Hit dot: {:?}", dot);
+    // }
 
     dots.to_vec()
 }
