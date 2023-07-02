@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use glam::Vec2;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -6,32 +8,44 @@ use uuid::Uuid;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type")]
 pub enum NetworkMessage {
-    GameUpdate(IndividualPlayerState),
+    GameUpdate(WorldUpdate),
     NewInput(PlayerInput),
+    NewGame(NewGame),
+}
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct WorldUpdate {
+    pub players: HashMap<Uuid, PlayerInfo>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct IndividualPlayerState {
-    pub position: Vec2,
-    pub input: PlayerInput,
-}
-
-impl IndividualPlayerState {
-    pub fn new(id: Uuid) -> Self {
-        Self {
-            position: Vec2::ZERO,
-            input: PlayerInput {
-                target: Vec2::ZERO,
-                index: 0,
-                player_id: id,
-            },
-        }
-    }
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct PlayerInfo {
+    pub index: usize,
+    pub pos: Vec2,
+    pub target: Vec2,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PlayerInput {
     pub target: Vec2,
-    pub index: usize,
-    pub player_id: Uuid,
+    pub id: Uuid,
+}
+
+impl PlayerInput {
+    pub fn new(id: Uuid) -> Self {
+        Self {
+            target: Vec2::ZERO,
+            id,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct NewGame {
+    pub id: Uuid,
+}
+
+impl NewGame {
+    pub fn new(id: Uuid) -> Self {
+        Self { id }
+    }
 }

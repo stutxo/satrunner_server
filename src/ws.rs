@@ -6,7 +6,7 @@ use uuid::Uuid;
 use warp::ws::{Message, WebSocket};
 
 use crate::{
-    messages::{NetworkMessage, PlayerInput},
+    messages::{NetworkMessage, NewGame, PlayerInfo, PlayerInput},
     GlobalGameState, PlayerState,
 };
 
@@ -15,38 +15,36 @@ pub async fn new_websocket(ws: WebSocket, game_state: GlobalGameState) {
 
     let (tx, rx) = mpsc::unbounded_channel();
     let mut rx = UnboundedReceiverStream::new(rx);
-
     let tx_clone = tx.clone();
 
     let client_id = Uuid::new_v4();
-    let player = PlayerState::new(client_id, tx);
+    let mut player = PlayerState::new(tx);
+    player
+        .current_state
+        .players
+        .insert(client_id, PlayerInfo::default());
 
     game_state.write().await.players.insert(client_id, player);
 
+    if let Err(disconnected) = tx_clone.send(NetworkMessage::NewGame(NewGame::new(client_id))) {
+        log::error!("Failed to send NewGame: {}", disconnected);
+    }
+
     tokio::task::spawn(async move {
         while let Some(message) = rx.next().await {
-            match message {
-                NetworkMessage::GameUpdate(player_state) => {
-                    if let Ok(msg) = serde_json::to_string(&player_state) {
-                        log::debug!("Game State: {:?}", msg);
-                        match ws_tx.send(Message::text(msg)).await {
-                            Ok(_) => {}
-                            Err(e) => {
-                                log::error!("Failed to send message over WebSocket: {}", e);
-                            }
+            match serde_json::to_string::<NetworkMessage>(&message) {
+                Ok(send_world_update) => {
+                    log::debug!("Sending message: {:?}", send_world_update);
+                    match ws_tx.send(Message::text(send_world_update)).await {
+                        Ok(_) => {}
+                        Err(e) => {
+                            log::error!("Failed to send message over WebSocket: {}", e);
+                            break;
                         }
                     }
                 }
-                NetworkMessage::NewInput(input) => {
-                    if let Ok(msg) = serde_json::to_string(&input) {
-                        log::debug!("Input Sent: {:?}", msg);
-                        match ws_tx.send(Message::text(msg)).await {
-                            Ok(_) => {}
-                            Err(e) => {
-                                log::error!("Failed to send message over WebSocket: {}", e);
-                            }
-                        }
-                    }
+                Err(e) => {
+                    log::error!("Failed to parse message as Vec2: {:?}", e);
                 }
             }
         }
@@ -60,16 +58,21 @@ pub async fn new_websocket(ws: WebSocket, game_state: GlobalGameState) {
                         Ok(new_input) => {
                             log::debug!("Input Received: {:?}", input);
 
-                            if let Err(disconnected) =
-                                tx_clone.send(NetworkMessage::NewInput(new_input.clone()))
-                            {
-                                log::error!("Failed to send New Input: {}", disconnected);
-                            }
+                            for (id, player) in game_state.write().await.players.iter_mut() {
+                                let update_player =
+                                    player.current_state.players.get_mut(&client_id).unwrap();
+                                update_player.target = new_input.target;
+                                update_player.index += 1;
 
-                            if let Some(player) =
-                                game_state.write().await.players.get_mut(&client_id)
-                            {
-                                player.current_state.input = new_input.clone();
+                                if id != &client_id {
+                                    if let Err(disconnected) = player
+                                        .network_sender
+                                        .send(NetworkMessage::NewInput(new_input.clone()))
+                                    {
+                                        log::error!("Failed to read input: {}", disconnected);
+                                        break;
+                                    }
+                                }
                             }
                         }
                         Err(e) => {

@@ -19,14 +19,14 @@ pub struct GameWorld {
 
 #[derive(Debug, Clone)]
 pub struct PlayerState {
-    pub current_state: IndividualPlayerState,
+    pub current_state: WorldUpdate,
     pub network_sender: UnboundedSender<NetworkMessage>,
 }
 
 impl PlayerState {
-    pub fn new(id: Uuid, network_sender: UnboundedSender<NetworkMessage>) -> Self {
+    pub fn new(network_sender: UnboundedSender<NetworkMessage>) -> Self {
         Self {
-            current_state: IndividualPlayerState::new(id),
+            current_state: WorldUpdate::default(),
             network_sender,
         }
     }
