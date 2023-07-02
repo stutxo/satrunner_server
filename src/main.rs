@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
-use futures_util::{SinkExt, StreamExt, TryFutureExt};
+use futures_util::{SinkExt, StreamExt};
 use glam::f32::Vec2;
-use glam::Vec3;
-use rand::Rng;
+// use glam::Vec3;
+// use rand::Rng;
 
 use tokio::sync::{mpsc, RwLock};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use uuid::Uuid;
-use warp::ws::WebSocket;
+use warp::ws::{Message, WebSocket};
 use warp::Filter;
 
 mod messages;
@@ -22,10 +22,11 @@ const FALL_SPEED: f32 = 0.5;
 async fn main() {
     pretty_env_logger::init();
 
-    let game_state: GameState = Arc::new(RwLock::new(Game::default()));
+    let game_state: GameState = Arc::new(RwLock::new(State::default()));
+    let game_state_clone = Arc::clone(&game_state);
 
     tokio::spawn(async move {
-        game_engine(game_state).await;
+        game_engine(game_state_clone).await;
     });
 
     let game_state = warp::any().map(move || game_state.clone());
@@ -54,11 +55,28 @@ async fn user_connected(ws: WebSocket, game_state: GameState) {
 
     tokio::task::spawn(async move {
         while let Some(message) = rx.next().await {
-            log::debug!("OUTGOING: {:?}", message);
-            match ws_tx.send(message).await {
-                Ok(_) => {}
-                Err(e) => {
-                    log::error!("Failed to send message over WebSocket: {}", e);
+            match message {
+                NetMsg::GameUpdate(player_state) => {
+                    if let Ok(msg) = serde_json::to_string(&player_state) {
+                        log::debug!("Game State: {:?}", msg);
+                        match ws_tx.send(Message::text(msg)).await {
+                            Ok(_) => {}
+                            Err(e) => {
+                                log::error!("Failed to send message over WebSocket: {}", e);
+                            }
+                        }
+                    }
+                }
+                NetMsg::NewInput(input) => {
+                    if let Ok(msg) = serde_json::to_string(&input) {
+                        log::debug!("Input Sent: {:?}", msg);
+                        match ws_tx.send(Message::text(msg)).await {
+                            Ok(_) => {}
+                            Err(e) => {
+                                log::error!("Failed to send message over WebSocket: {}", e);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -68,9 +86,9 @@ async fn user_connected(ws: WebSocket, game_state: GameState) {
         match result {
             Ok(msg) => {
                 if let Ok(input) = msg.to_str() {
-                    log::debug!("INCOMING: {:?}", input);
                     match serde_json::from_str::<Input>(input) {
                         Ok(mut new_input) => {
+                            log::debug!("Input Received: {:?}", input);
                             new_input.id = Some(client_id.to_string());
 
                             let mut state = game_state.write().await;
@@ -101,21 +119,41 @@ async fn user_disconnected(client_id: Uuid, game_state: GameState) {
 }
 
 async fn game_engine(game_state: GameState) {
-    let direction = player.state.target - player.state.position;
-    let distance_to_target = direction.length();
+    loop {
+        {
+            let mut state = game_state.write().await;
+            for (_, player) in state.players.iter_mut() {
+                let direction = player.state.input.input - player.state.position;
+                let distance_to_target = direction.length();
 
-    if distance_to_target > 0.0 {
-        let movement = if distance_to_target <= PLAYER_SPEED {
-            direction
-        } else {
-            direction.normalize() * PLAYER_SPEED
-        };
+                if distance_to_target > 0.0 {
+                    let movement = if distance_to_target <= PLAYER_SPEED {
+                        direction
+                    } else {
+                        direction.normalize() * PLAYER_SPEED
+                    };
 
-        let new_position = player.state.position + movement;
+                    let new_position = player.state.position + movement;
 
-        if new_position.x.abs() <= WORLD_BOUNDS && new_position.y.abs() <= WORLD_BOUNDS {
-            player.state.position += Vec2::new(movement.x, -50.0);
+                    if new_position.x.abs() <= WORLD_BOUNDS && new_position.y.abs() <= WORLD_BOUNDS
+                    {
+                        player.state.position += Vec2::new(movement.x, -50.0);
+                    }
+                }
+            }
         }
+
+        {
+            for (_, player) in game_state.read().await.players.iter() {
+                if let Err(disconnected) =
+                    player.sender.send(NetMsg::GameUpdate(player.state.clone()))
+                {
+                    log::error!("Failed to send message to client: {}", disconnected);
+                }
+            }
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(33)).await;
     }
 }
 
@@ -132,71 +170,6 @@ async fn game_engine(game_state: GameState) {
 //                 }
 //             }
 //         }
-//     }
-// }
-
-// async fn game_engine(game_state: GameState) {
-//     //let mut dots = Vec::new();
-
-//     loop {
-//         let mut player_state = player_state.write().await;
-//         let mut gamestate = GameState::new();
-//         for (id, player) in player_state.iter_mut() {
-//             let current_position = Vec2::new(player.position.x, player.position.y);
-//             let direction = Vec2::new(player.target.x, player.target.y) - current_position;
-//             let distance_to_target = direction.length();
-
-//             if distance_to_target > 0.0 {
-//                 let normalized_direction = direction / distance_to_target;
-//                 let movement = normalized_direction * PLAYER_SPEED;
-
-//                 let new_position = player.position + movement;
-
-//                 if new_position.x.abs() <= WORLD_BOUNDS && new_position.y.abs() <= WORLD_BOUNDS {
-//                     if movement.length() < distance_to_target {
-//                         player.position += Vec2::new(movement.x, 0.0);
-//                         let index = Index {
-//                             position: player.position,
-//                             index: player.index,
-//                         };
-//                         gamestate.players_pos.insert(id.to_string(), index);
-//                     } else {
-//                         player.position = Vec2::new(player.target.x, -50.0);
-//                         let index = Index {
-//                             position: player.position,
-//                             index: player.index,
-//                         };
-//                         gamestate.players_pos.insert(id.to_string(), index);
-//                     }
-//                 }
-//             }
-//         }
-
-//         // let dots = spawn_dots(&mut dots, &player_state).await;
-
-//         // gamestate.dots = dots;
-
-//         for (uid, tx) in connections.read().await.iter() {
-//             let uid = uid.to_string();
-//             let local_gamestate = &mut gamestate.clone();
-//             if local_gamestate.players_pos.contains_key(&uid) {
-//                 if let Some(index) = local_gamestate.players_pos.remove(&uid) {
-//                     local_gamestate
-//                         .players_pos
-//                         .insert("local".to_string(), index);
-//                 }
-//             }
-
-//             let player_state_msg = ServerMsg::ServerMsg(local_gamestate.clone());
-//             let msg =
-//                 serde_json::to_string(&player_state_msg).expect("Failed to serialize message");
-
-//             if let Err(disconnected) = tx.send(Message::text(&msg)) {
-//                 eprintln!("Failed to send message to client: {}", disconnected);
-//             }
-//         }
-
-//         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 //     }
 // }
 

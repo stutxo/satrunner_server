@@ -3,28 +3,24 @@ use std::{collections::HashMap, sync::Arc};
 use glam::Vec2;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc::UnboundedSender, RwLock};
-use warp::ws::Message;
 
 use uuid::Uuid;
 
-pub type GameState = Arc<RwLock<Game>>;
-pub type PlayerInfo = HashMap<Uuid, Player>;
+pub type GameState = Arc<RwLock<State>>;
 
-// Game struct
 #[derive(Debug, Clone, Default)]
-pub struct Game {
-    pub players: PlayerInfo,
+pub struct State {
+    pub players: HashMap<Uuid, Player>,
 }
 
-// Player struct
 #[derive(Debug, Clone)]
 pub struct Player {
     pub state: PlayerState,
-    pub sender: UnboundedSender<Message>,
+    pub sender: UnboundedSender<NetMsg>,
 }
 
 impl Player {
-    pub fn new(id: Uuid, sender: UnboundedSender<Message>) -> Self {
+    pub fn new(id: Uuid, sender: UnboundedSender<NetMsg>) -> Self {
         Self {
             state: PlayerState::new(id),
             sender,
@@ -32,7 +28,14 @@ impl Player {
     }
 }
 
-// PlayerState struct
+// Network messages
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "type")]
+pub enum NetMsg {
+    GameUpdate(PlayerState),
+    NewInput(Input),
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PlayerState {
     pub position: Vec2,
@@ -52,15 +55,6 @@ impl PlayerState {
     }
 }
 
-// Network messages
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(tag = "type")]
-pub enum Messages {
-    GameUpdate(PlayerState),
-    NewInput(Input),
-}
-
-// Input struct
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Input {
     pub input: Vec2,
