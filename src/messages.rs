@@ -23,7 +23,7 @@ impl IndividualPlayerState {
             input: PlayerInput {
                 target: Vec2::ZERO,
                 index: 0,
-                player_id: Some(id.to_string()),
+                player_id: id,
             },
         }
     }
@@ -33,5 +33,5 @@ impl IndividualPlayerState {
 pub struct PlayerInput {
     pub target: Vec2,
     pub index: usize,
-    pub player_id: Option<String>,
+    pub player_id: Uuid,
 }

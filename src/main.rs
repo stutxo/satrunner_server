@@ -46,13 +46,12 @@ async fn main() {
     let game_state = warp::any().map(move || game_state.clone());
 
     let routes =
-        warp::path("play")
+        warp::path("run")
             .and(warp::ws())
             .and(game_state)
             .map(|ws: warp::ws::Ws, game_state| {
                 ws.on_upgrade(move |socket| new_websocket(socket, game_state))
             });
 
-    log::debug!("ws://localhost:3030/play");
     warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
 }

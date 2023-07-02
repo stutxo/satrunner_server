@@ -57,10 +57,8 @@ pub async fn new_websocket(ws: WebSocket, game_state: GlobalGameState) {
             Ok(msg) => {
                 if let Ok(input) = msg.to_str() {
                     match serde_json::from_str::<PlayerInput>(input) {
-                        Ok(mut new_input) => {
+                        Ok(new_input) => {
                             log::debug!("Input Received: {:?}", input);
-
-                            new_input.player_id = Some(client_id.to_string());
 
                             if let Err(disconnected) =
                                 tx_clone.send(NetworkMessage::NewInput(new_input.clone()))

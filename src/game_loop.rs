@@ -23,7 +23,7 @@ pub async fn game_loop(game_state: GlobalGameState) {
 
                     if new_position.x.abs() <= WORLD_BOUNDS && new_position.y.abs() <= WORLD_BOUNDS
                     {
-                        player.current_state.position += Vec2::new(movement.x, -50.0);
+                        player.current_state.position += Vec2::new(movement.x, movement.y);
                     }
                 }
             }
