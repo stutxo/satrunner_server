@@ -10,7 +10,7 @@ use crate::{
 
 pub const WORLD_BOUNDS: f32 = 300.0;
 pub const PLAYER_SPEED: f32 = 1.0;
-pub const TICK_RATE: u64 = 1000;
+pub const TICK_RATE: u64 = 33;
 
 pub async fn game_loop(game_state: GlobalGameState) {
     loop {

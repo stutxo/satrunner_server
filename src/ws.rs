@@ -18,6 +18,10 @@ pub async fn new_websocket(ws: WebSocket, game_state: GlobalGameState) {
     let tx_clone = tx.clone();
 
     let client_id = Uuid::new_v4();
+    if let Err(disconnected) = tx_clone.send(NetworkMessage::NewGame(NewGame::new(client_id))) {
+        log::error!("Failed to send NewGame: {}", disconnected);
+    }
+
     let mut player = PlayerState::new(tx);
     player
         .current_state
@@ -26,15 +30,11 @@ pub async fn new_websocket(ws: WebSocket, game_state: GlobalGameState) {
 
     game_state.write().await.players.insert(client_id, player);
 
-    if let Err(disconnected) = tx_clone.send(NetworkMessage::NewGame(NewGame::new(client_id))) {
-        log::error!("Failed to send NewGame: {}", disconnected);
-    }
-
     tokio::task::spawn(async move {
         while let Some(message) = rx.next().await {
             match serde_json::to_string::<NetworkMessage>(&message) {
                 Ok(send_world_update) => {
-                    log::debug!("Sending message: {:?}", send_world_update);
+                    //log::debug!("Sending message: {:?}", send_world_update);
                     match ws_tx.send(Message::text(send_world_update)).await {
                         Ok(_) => {}
                         Err(e) => {
@@ -56,7 +56,7 @@ pub async fn new_websocket(ws: WebSocket, game_state: GlobalGameState) {
                 if let Ok(input) = msg.to_str() {
                     match serde_json::from_str::<PlayerInput>(input) {
                         Ok(new_input) => {
-                            log::debug!("!!!!!!!INPUT!!!!!: {:?}", new_input);
+                            //log::debug!("!!!!!!!INPUT!!!!!: {:?}", new_input);
 
                             for (id, player) in game_state.write().await.players.iter_mut() {
                                 if let Some(update_player) =
