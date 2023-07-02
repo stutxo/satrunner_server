@@ -56,14 +56,15 @@ pub async fn new_websocket(ws: WebSocket, game_state: GlobalGameState) {
                 if let Ok(input) = msg.to_str() {
                     match serde_json::from_str::<PlayerInput>(input) {
                         Ok(new_input) => {
-                            log::debug!("Input Received: {:?}", input);
+                            log::debug!("!!!!!!!INPUT!!!!!: {:?}", new_input);
 
                             for (id, player) in game_state.write().await.players.iter_mut() {
-                                let update_player =
-                                    player.current_state.players.get_mut(&client_id).unwrap();
-                                update_player.target = new_input.target;
-                                update_player.index += 1;
-
+                                if let Some(update_player) =
+                                    player.current_state.players.get_mut(&client_id)
+                                {
+                                    update_player.target = new_input.target;
+                                    update_player.index += 1;
+                                }
                                 if id != &client_id {
                                     if let Err(disconnected) = player
                                         .network_sender

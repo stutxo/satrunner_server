@@ -4,7 +4,7 @@ use crate::{messages::NetworkMessage, GlobalGameState};
 
 pub const WORLD_BOUNDS: f32 = 300.0;
 pub const PLAYER_SPEED: f32 = 1.0;
-pub const TICK_RATE: u64 = 100;
+pub const TICK_RATE: u64 = 1000;
 
 pub async fn game_loop(game_state: GlobalGameState) {
     loop {
@@ -33,11 +33,20 @@ pub async fn game_loop(game_state: GlobalGameState) {
             }
         }
 
-        {
-            for (_, player) in game_state.read().await.players.iter() {
+        let game_state_clone = {
+            let game_state_read = game_state.read().await;
+            game_state_read
+                .players
+                .iter()
+                .map(|(id, player)| (*id, player.current_state.clone()))
+                .collect::<Vec<_>>()
+        };
+
+        for (id, current_state) in game_state_clone {
+            if let Some(player) = game_state.read().await.players.get(&id) {
                 if let Err(disconnected) = player
                     .network_sender
-                    .send(NetworkMessage::GameUpdate(player.current_state.clone()))
+                    .send(NetworkMessage::GameUpdate(current_state))
                 {
                     log::error!("Failed to send GameUpdate: {}", disconnected);
                 }
