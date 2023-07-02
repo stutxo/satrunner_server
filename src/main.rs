@@ -1,32 +1,46 @@
-use std::sync::Arc;
-
-use futures_util::{SinkExt, StreamExt};
-use glam::f32::Vec2;
-// use glam::Vec3;
-// use rand::Rng;
-
-use tokio::sync::{mpsc, RwLock};
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use std::{collections::HashMap, sync::Arc};
+use tokio::sync::{mpsc::UnboundedSender, RwLock};
 use uuid::Uuid;
-use warp::ws::{Message, WebSocket};
 use warp::Filter;
 
+mod game_loop;
 mod messages;
+mod ws;
+use game_loop::*;
 use messages::*;
+use ws::*;
 
-pub const WORLD_BOUNDS: f32 = 300.0;
-const PLAYER_SPEED: f32 = 1.0;
-const FALL_SPEED: f32 = 0.5;
+pub type GlobalGameState = Arc<RwLock<GameWorld>>;
+
+#[derive(Debug, Clone, Default)]
+pub struct GameWorld {
+    pub players: HashMap<Uuid, PlayerState>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PlayerState {
+    pub current_state: IndividualPlayerState,
+    pub network_sender: UnboundedSender<NetworkMessage>,
+}
+
+impl PlayerState {
+    pub fn new(id: Uuid, network_sender: UnboundedSender<NetworkMessage>) -> Self {
+        Self {
+            current_state: IndividualPlayerState::new(id),
+            network_sender,
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() {
     pretty_env_logger::init();
 
-    let game_state: GameState = Arc::new(RwLock::new(State::default()));
+    let game_state: GlobalGameState = Arc::new(RwLock::new(GameWorld::default()));
     let game_state_clone = Arc::clone(&game_state);
 
     tokio::spawn(async move {
-        game_engine(game_state_clone).await;
+        game_loop(game_state_clone).await;
     });
 
     let game_state = warp::any().map(move || game_state.clone());
@@ -36,183 +50,9 @@ async fn main() {
             .and(warp::ws())
             .and(game_state)
             .map(|ws: warp::ws::Ws, game_state| {
-                ws.on_upgrade(move |socket| user_connected(socket, game_state))
+                ws.on_upgrade(move |socket| new_websocket(socket, game_state))
             });
 
     log::debug!("ws://localhost:3030/play");
     warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
 }
-
-async fn user_connected(ws: WebSocket, game_state: GameState) {
-    let (mut ws_tx, mut ws_rx) = ws.split();
-
-    let (tx, rx) = mpsc::unbounded_channel();
-    let mut rx = UnboundedReceiverStream::new(rx);
-
-    let client_id = Uuid::new_v4();
-    let player = Player::new(client_id, tx);
-    game_state.write().await.players.insert(client_id, player);
-
-    tokio::task::spawn(async move {
-        while let Some(message) = rx.next().await {
-            match message {
-                NetMsg::GameUpdate(player_state) => {
-                    if let Ok(msg) = serde_json::to_string(&player_state) {
-                        log::debug!("Game State: {:?}", msg);
-                        match ws_tx.send(Message::text(msg)).await {
-                            Ok(_) => {}
-                            Err(e) => {
-                                log::error!("Failed to send message over WebSocket: {}", e);
-                            }
-                        }
-                    }
-                }
-                NetMsg::NewInput(input) => {
-                    if let Ok(msg) = serde_json::to_string(&input) {
-                        log::debug!("Input Sent: {:?}", msg);
-                        match ws_tx.send(Message::text(msg)).await {
-                            Ok(_) => {}
-                            Err(e) => {
-                                log::error!("Failed to send message over WebSocket: {}", e);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    });
-
-    while let Some(result) = ws_rx.next().await {
-        match result {
-            Ok(msg) => {
-                if let Ok(input) = msg.to_str() {
-                    match serde_json::from_str::<Input>(input) {
-                        Ok(mut new_input) => {
-                            log::debug!("Input Received: {:?}", input);
-                            new_input.id = Some(client_id.to_string());
-
-                            let mut state = game_state.write().await;
-                            if let Some(player) = state.players.get_mut(&client_id) {
-                                player.state.input = new_input.clone();
-                            }
-                        }
-                        Err(e) => {
-                            log::error!("Failed to parse message as Vec2: {:?}", e);
-                        }
-                    }
-                } else {
-                    log::error!("other message: {:?}", msg);
-                }
-            }
-            Err(e) => {
-                log::error!("websocket error(uid={}): {}", client_id, e);
-                break;
-            }
-        };
-    }
-    user_disconnected(client_id, game_state).await;
-}
-
-async fn user_disconnected(client_id: Uuid, game_state: GameState) {
-    log::debug!("player disconnected: {}", client_id);
-    game_state.write().await.players.remove(&client_id);
-}
-
-async fn game_engine(game_state: GameState) {
-    loop {
-        {
-            let mut state = game_state.write().await;
-            for (_, player) in state.players.iter_mut() {
-                let direction = player.state.input.input - player.state.position;
-                let distance_to_target = direction.length();
-
-                if distance_to_target > 0.0 {
-                    let movement = if distance_to_target <= PLAYER_SPEED {
-                        direction
-                    } else {
-                        direction.normalize() * PLAYER_SPEED
-                    };
-
-                    let new_position = player.state.position + movement;
-
-                    if new_position.x.abs() <= WORLD_BOUNDS && new_position.y.abs() <= WORLD_BOUNDS
-                    {
-                        player.state.position += Vec2::new(movement.x, -50.0);
-                    }
-                }
-            }
-        }
-
-        {
-            for (_, player) in game_state.read().await.players.iter() {
-                if let Err(disconnected) =
-                    player.sender.send(NetMsg::GameUpdate(player.state.clone()))
-                {
-                    log::error!("Failed to send message to client: {}", disconnected);
-                }
-            }
-        }
-
-        tokio::time::sleep(std::time::Duration::from_millis(33)).await;
-    }
-}
-
-// async fn player_inputs(connections: connections, mut receive_rx: UnboundedReceiver<SenderMsg>) {
-//     while let Some(input) = receive_rx.recv().await {
-//         let sender_id = input.id;
-//         let client_msg = ServerMsg::ClientMsg(input.client);
-//         let input = serde_json::to_string(&client_msg).unwrap();
-
-//         for (&uid, tx) in connections.read().await.iter() {
-//             if uid != sender_id {
-//                 if let Err(disconnected) = tx.send(Message::text(input.clone())) {
-//                     eprintln!("Failed to send message to client: {}", disconnected);
-//                 }
-//             }
-//         }
-//     }
-// }
-
-// async fn spawn_dots(dots: &mut Vec<Vec3>, player_state: &HashMap<Uuid, Player>) -> Vec<Vec3> {
-//     // let pp: Vec<_> = player_state.values().map(|p| p.position).collect();
-
-//     // let mut rng = rand::thread_rng();
-//     // // let num_balls: i32 = rng.gen_range(1..10);
-
-//     // // for _ in 0..num_balls {
-//     // let x_position: f32 = rng.gen_range(-WORLD_BOUNDS..WORLD_BOUNDS);
-//     // let y_position: f32 = 25.;
-
-//     // let dot_start = Vec3::new(x_position, y_position, 0.1);
-
-//     // dots.push(dot_start);
-//     // // }
-
-//     // for dot in dots.iter_mut() {
-//     //     dot.x += FALL_SPEED * 0.0;
-//     //     dot.y += FALL_SPEED * -1.0;
-//     // }
-
-//     // let threshold_distance: f32 = 1.0;
-//     // let mut hit_dots = Vec::new();
-
-//     // dots.retain(|dot| {
-//     //     let dot_vec2 = Vec2::new(dot.x, dot.y);
-//     //     let distance_to_players: Vec<f32> = pp
-//     //         .iter()
-//     //         .map(|player_pos| (*player_pos - dot_vec2).length())
-//     //         .collect();
-
-//     //     let hit = distance_to_players
-//     //         .iter()
-//     //         .any(|&distance| distance <= threshold_distance);
-
-//     //     if hit {
-//     //         hit_dots.push(*dot);
-//     //     }
-
-//     //     !hit
-//     // });
-
-//     dots.to_vec()
-// }
