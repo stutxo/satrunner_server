@@ -1,6 +1,12 @@
-use glam::Vec2;
+use std::collections::HashMap;
 
-use crate::{messages::NetworkMessage, GlobalGameState};
+use glam::Vec2;
+use uuid::Uuid;
+
+use crate::{
+    messages::{NetworkMessage, PlayerInfo, WorldUpdate},
+    GlobalGameState,
+};
 
 pub const WORLD_BOUNDS: f32 = 300.0;
 pub const PLAYER_SPEED: f32 = 1.0;
@@ -33,23 +39,34 @@ pub async fn game_loop(game_state: GlobalGameState) {
             }
         }
 
-        let game_state_clone = {
-            let game_state_read = game_state.read().await;
-            game_state_read
-                .players
-                .iter()
-                .map(|(id, player)| (*id, player.current_state.clone()))
-                .collect::<Vec<_>>()
-        };
+        let players = game_state
+            .read()
+            .await
+            .players
+            .iter()
+            .filter_map(|(id, player_state)| {
+                player_state
+                    .current_state
+                    .players
+                    .get(id)
+                    .map(|player_info| {
+                        (
+                            *id,
+                            PlayerInfo {
+                                index: player_info.index,
+                                pos: player_info.pos,
+                                target: player_info.target,
+                            },
+                        )
+                    })
+            })
+            .collect::<HashMap<Uuid, PlayerInfo>>();
 
-        for (id, current_state) in game_state_clone {
-            if let Some(player) = game_state.read().await.players.get(&id) {
-                if let Err(disconnected) = player
-                    .network_sender
-                    .send(NetworkMessage::GameUpdate(current_state))
-                {
-                    log::error!("Failed to send GameUpdate: {}", disconnected);
-                }
+        let game_update = NetworkMessage::GameUpdate(WorldUpdate { players });
+
+        for player in game_state.read().await.players.values() {
+            if let Err(disconnected) = player.network_sender.send(game_update.clone()) {
+                log::error!("Failed to send GameUpdate: {}", disconnected);
             }
         }
 
