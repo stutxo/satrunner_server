@@ -15,6 +15,8 @@ pub enum NetworkMessage {
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct WorldUpdate {
     pub players: HashMap<Uuid, PlayerInfo>,
+    pub rng_seed: u64,
+    pub game_tick: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]

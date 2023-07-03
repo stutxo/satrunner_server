@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
 use glam::{Vec2, Vec3};
+use rand::prelude::*;
 use rand::Rng;
+use rand_chacha::ChaCha8Rng;
 use uuid::Uuid;
 
 use crate::{
@@ -15,7 +17,17 @@ const FALL_SPEED: f32 = 0.5;
 pub const TICK_RATE: u64 = 33;
 
 pub async fn game_loop(game_state: GlobalGameState) {
+    let rng_seed: u64 = rand::random();
+    let mut game_tick: u64 = 0;
     loop {
+        game_tick += 1;
+        let seed = rng_seed ^ game_tick;
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        log::info!(
+            "game_tick {:?}, rng: {:?}",
+            game_tick,
+            rng.gen_range(-WORLD_BOUNDS..WORLD_BOUNDS)
+        );
         {
             for (id, player_state) in game_state.write().await.players.iter_mut() {
                 if let Some(player) = player_state.current_state.players.get_mut(id) {
@@ -64,7 +76,11 @@ pub async fn game_loop(game_state: GlobalGameState) {
             })
             .collect::<HashMap<Uuid, PlayerInfo>>();
 
-        let game_update = NetworkMessage::GameUpdate(WorldUpdate { players });
+        let game_update = NetworkMessage::GameUpdate(WorldUpdate {
+            players,
+            rng_seed,
+            game_tick,
+        });
 
         for player in game_state.read().await.players.values() {
             if let Err(disconnected) = player.network_sender.send(game_update.clone()) {
