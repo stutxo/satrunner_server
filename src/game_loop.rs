@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use glam::Vec2;
+use glam::{Vec2, Vec3};
+use rand::Rng;
 use uuid::Uuid;
 
 use crate::{
@@ -10,6 +11,7 @@ use crate::{
 
 pub const WORLD_BOUNDS: f32 = 300.0;
 pub const PLAYER_SPEED: f32 = 1.0;
+const FALL_SPEED: f32 = 0.5;
 pub const TICK_RATE: u64 = 33;
 
 pub async fn game_loop(game_state: GlobalGameState) {
@@ -73,3 +75,45 @@ pub async fn game_loop(game_state: GlobalGameState) {
         tokio::time::sleep(std::time::Duration::from_millis(TICK_RATE)).await;
     }
 }
+
+// async fn spawn_dots(dots: &mut Vec<Vec3>) -> Vec<Vec3> {
+//     let mut rng = rand::thread_rng();
+//     // let num_balls: i32 = rng.gen_range(1..10);
+
+//     // for _ in 0..num_balls {
+//     let x_position: f32 = rng.gen_range(-WORLD_BOUNDS..WORLD_BOUNDS);
+//     let y_position: f32 = 25.;
+
+//     let dot_start = Vec3::new(x_position, y_position, 0.1);
+
+//     dots.push(dot_start);
+//     // }
+
+//     for dot in dots.iter_mut() {
+//         dot.x += FALL_SPEED * 0.0;
+//         dot.y += FALL_SPEED * -1.0;
+//     }
+
+//     let threshold_distance: f32 = 1.0;
+//     let mut hit_dots = Vec::new();
+
+//     dots.retain(|dot| {
+//         let dot_vec2 = Vec2::new(dot.x, dot.y);
+//         let distance_to_players: Vec<f32> = pp
+//             .iter()
+//             .map(|player_pos| (*player_pos - dot_vec2).length())
+//             .collect();
+
+//         let hit = distance_to_players
+//             .iter()
+//             .any(|&distance| distance <= threshold_distance);
+
+//         if hit {
+//             hit_dots.push(*dot);
+//         }
+
+//         !hit
+//     });
+
+//     dots.to_vec()
+// }
