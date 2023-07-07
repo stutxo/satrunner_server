@@ -1,6 +1,10 @@
 use futures_util::{SinkExt, StreamExt};
 
-use tokio::sync::mpsc;
+use log::{debug, error};
+use tokio::{
+    sync::mpsc,
+    time::{timeout, Timeout},
+};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use uuid::Uuid;
 use warp::ws::{Message, WebSocket};
@@ -19,7 +23,7 @@ pub async fn new_websocket(ws: WebSocket, game_state: GlobalGameState) {
 
     let client_id = Uuid::new_v4();
     if let Err(disconnected) = tx_clone.send(NetworkMessage::NewGame(NewGame::new(client_id))) {
-        log::error!("Failed to send NewGame: {}", disconnected);
+        error!("Failed to send NewGame: {}", disconnected);
     }
 
     let mut player = PlayerState::new(tx);
@@ -34,17 +38,17 @@ pub async fn new_websocket(ws: WebSocket, game_state: GlobalGameState) {
         while let Some(message) = rx.next().await {
             match serde_json::to_string::<NetworkMessage>(&message) {
                 Ok(send_world_update) => {
-                    //log::debug!("Sending message: {:?}", send_world_update);
+                    //debug!("Sending message: {:?}", send_world_update);
                     match ws_tx.send(Message::text(send_world_update)).await {
                         Ok(_) => {}
                         Err(e) => {
-                            log::error!("Failed to send message over WebSocket: {}", e);
+                            error!("Failed to send message over WebSocket: {}", e);
                             break;
                         }
                     }
                 }
                 Err(e) => {
-                    log::error!("Failed to parse message as Vec2: {:?}", e);
+                    error!("Failed to parse message as Vec2: {:?}", e);
                 }
             }
         }
@@ -56,8 +60,7 @@ pub async fn new_websocket(ws: WebSocket, game_state: GlobalGameState) {
                 if let Ok(input) = msg.to_str() {
                     match serde_json::from_str::<PlayerInput>(input) {
                         Ok(new_input) => {
-                            //log::debug!("!!!!!!!INPUT!!!!!: {:?}", new_input);
-
+                            //log::info!("got input: {:?}", new_input);
                             for (id, player) in game_state.write().await.players.iter_mut() {
                                 if let Some(update_player) =
                                     player.current_state.players.get_mut(&client_id)
@@ -70,27 +73,27 @@ pub async fn new_websocket(ws: WebSocket, game_state: GlobalGameState) {
                                         .network_sender
                                         .send(NetworkMessage::NewInput(new_input.clone()))
                                     {
-                                        log::error!("Failed to read input: {}", disconnected);
+                                        error!("Failed to read input: {}", disconnected);
                                         break;
                                     }
                                 }
                             }
                         }
                         Err(e) => {
-                            log::error!("Failed to parse message as Vec2: {:?}", e);
+                            error!("Failed to parse message as Vec2: {:?}", e);
                         }
                     }
                 } else {
-                    log::error!("other message: {:?}", msg);
+                    error!("other message: {:?}", msg);
                 }
             }
             Err(e) => {
-                log::error!("websocket error(uid={}): {}", client_id, e);
+                error!("websocket error(uid={}): {}", client_id, e);
                 break;
             }
         };
     }
 
-    log::debug!("player disconnected: {}", client_id);
+    debug!("player disconnected: {}", client_id);
     game_state.write().await.players.remove(&client_id);
 }

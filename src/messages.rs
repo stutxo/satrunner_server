@@ -19,17 +19,28 @@ pub struct WorldUpdate {
     pub game_tick: u64,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PlayerInfo {
     pub index: usize,
     pub pos: Vec2,
     pub target: Vec2,
 }
 
+impl Default for PlayerInfo {
+    fn default() -> Self {
+        Self {
+            index: 0,
+            pos: Vec2::new(0.0, -50.0),
+            target: Vec2::ZERO,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PlayerInput {
     pub target: Vec2,
     pub id: Uuid,
+    pub tick: usize,
 }
 
 impl PlayerInput {
@@ -37,6 +48,7 @@ impl PlayerInput {
         Self {
             target: Vec2::ZERO,
             id,
+            tick: 0,
         }
     }
 }
