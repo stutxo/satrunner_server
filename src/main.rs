@@ -6,9 +6,14 @@ use warp::Filter;
 mod game_loop;
 mod messages;
 mod ws;
-use game_loop::*;
+
 use messages::*;
 use ws::*;
+////
+/// /
+///
+/// /
+pub const TICK_RATE: f32 = 1. / 30.0;
 
 pub type GlobalGameState = Arc<RwLock<GameWorld>>;
 
@@ -37,21 +42,31 @@ async fn main() {
     pretty_env_logger::init();
 
     let game_state: GlobalGameState = Arc::new(RwLock::new(GameWorld::default()));
-    let game_state_clone = Arc::clone(&game_state);
+
+    let (tick_tx, tick_rx) = tokio::sync::watch::channel(0_u64);
+    let server_tick = tick_rx.clone();
 
     tokio::spawn(async move {
-        game_loop(game_state_clone).await;
+        let mut tick = 0;
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs_f32(TICK_RATE)).await;
+            tick += 1;
+            if let Err(e) = tick_tx.send(tick) {
+                log::error!("Failed to send tick: {}", e);
+            }
+        }
     });
 
     let game_state = warp::any().map(move || game_state.clone());
+    let server_tick = warp::any().map(move || server_tick.clone());
 
-    let routes =
-        warp::path("run")
-            .and(warp::ws())
-            .and(game_state)
-            .map(|ws: warp::ws::Ws, game_state| {
-                ws.on_upgrade(move |socket| new_websocket(socket, game_state))
-            });
+    let routes = warp::path("run")
+        .and(warp::ws())
+        .and(game_state)
+        .and(server_tick)
+        .map(|ws: warp::ws::Ws, game_state, server_tick| {
+            ws.on_upgrade(move |socket| new_websocket(socket, game_state, server_tick))
+        });
 
     warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
 }
