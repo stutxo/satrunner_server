@@ -25,6 +25,7 @@ pub struct Player {
     pub pos: Vec3,
     pub id: Uuid,
     pub score: usize,
+    pub prev_pos: Vec3,
 }
 
 impl Player {
@@ -34,6 +35,7 @@ impl Player {
             pos: Vec3::new(0.0, -50.0, 0.0),
             id,
             score: 0,
+            prev_pos: Vec3::new(0.0, -50.0, 0.0),
         }
     }
     pub fn apply_input(&mut self) {
@@ -43,7 +45,6 @@ impl Player {
             && (self.pos.y + movement.y).abs() <= WORLD_BOUNDS
         {
             self.pos += Vec3::new(movement.x, 0.0, 0.0);
-            log::info!("Player {:?} moved to {:?}", self.id, self.pos)
         }
     }
 
@@ -122,26 +123,33 @@ pub async fn new_websocket(
 
                                 if let Some(input) = inputs.iter().find(|input| input.tick == new_tick) {
                                     player.target = input.target;
-                                    player.apply_input();
+
+                                    log::info!(
+                                        "process input: {:?}, server tick {:?}",
+                                        player.target,
+                                        new_tick
+                                    );
+
                                 }
-                                log::info!(
-                                    "process input: {:?}, server tick {:?}",
-                                    player.target,
-                                    new_tick
-                                );
+                                player.apply_input();
 
                                 let new_pos = NetworkMessage::GameUpdate(NewPos::new(
                                     player.pos.x,
                                     new_tick,
                                     client_id,
                                 ));
-                                for send_player in game_state.read().await.players.values() {
-                                    if let Err(disconnected) =
-                                        send_player.network_sender.send(new_pos.clone())
-                                    {
-                                        error!("Failed to send GameUpdate: {}", disconnected);
+
+                                if (player.pos.x - player.prev_pos.x).abs() > 0.01 {
+                                    for send_player in game_state.read().await.players.values() {
+                                        if let Err(disconnected) =
+                                            send_player.network_sender.send(new_pos.clone())
+                                        {
+                                            error!("Failed to send GameUpdate: {}", disconnected);
+                                        }
                                     }
+                                    player.prev_pos.x = player.pos.x;
                                 }
+
                                 let before_drop = inputs.clone();
 
                                 inputs.retain(|input| input.tick > new_tick);

@@ -13,7 +13,7 @@ use ws::*;
 /// /
 ///
 /// /
-pub const TICK_RATE: f32 = 1. / 30.0;
+pub const TICK_RATE: f32 = 1.;
 
 pub type GlobalGameState = Arc<RwLock<GameWorld>>;
 
