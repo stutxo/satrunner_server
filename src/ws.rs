@@ -112,6 +112,7 @@ pub async fn new_websocket(
 
     tokio::task::spawn(async move {
         let mut sent_new_game = false;
+        let mut adjusment_iteration = 0;
         pin_mut!(cancel_rx);
         loop {
             tokio::select! {
@@ -120,45 +121,56 @@ pub async fn new_websocket(
                         if sent_new_game {
                             {
                                 let mut inputs = pending_inputs.lock().await;
+                                let mut tick_adjustment: f64 = 0.;
 
-                                if let Some(input) = inputs.iter().find(|input| input.tick == new_tick) {
-                                    player.target = input.target;
+                                let mut game_update: Option<NetworkMessage> = None;
 
-                                    log::info!(
-                                        "process input: {:?}, server tick {:?}",
-                                        player.target,
-                                        new_tick
-                                    );
-
-                                }
+                                inputs.retain(|input| match input.tick {
+                                    tick if tick == new_tick => {
+                                        player.target = input.target;
+                                        game_update = Some(NetworkMessage::GameUpdate(NewPos::new(
+                                            player.target,
+                                            new_tick,
+                                            client_id,
+                                            player.pos.x,
+                                            tick_adjustment,
+                                            adjusment_iteration,
+                                        )));
+                                        false // this will remove the input from the vec
+                                    },
+                                    tick if tick < new_tick => {
+                                        let diff = new_tick as f64 - tick as f64;
+                                        tick_adjustment  = -diff;
+                                        adjusment_iteration += 1;
+                                        log::error!(
+                                            "process input: {:?}, server tick {:?},, client tick {:?} tick_adjustment: {:?}",
+                                            player.target,
+                                            new_tick,
+                                            tick,
+                                            tick_adjustment
+                                        );
+                                        false // this will remove the input from the vec
+                                    },
+                                    _ => true, // keep the input in the vec
+                                });
                                 player.apply_input();
 
-                                let new_pos = NetworkMessage::GameUpdate(NewPos::new(
-                                    player.pos.x,
-                                    new_tick,
-                                    client_id,
-                                ));
-
-                                if (player.pos.x - player.prev_pos.x).abs() > 0.01 {
-                                    for send_player in game_state.read().await.players.values() {
-                                        if let Err(disconnected) =
-                                            send_player.network_sender.send(new_pos.clone())
-                                        {
+                                if new_tick % 100 == 0 {
+                                    log::info!(
+                                        "player pos: {:?}, tick {:?}",
+                                        player.pos.x, new_tick
+                                    );
+                                }
+                                if let Some(game_update_msg) = game_update {
+                                    let players = game_state.read().await.players.values().cloned().collect::<Vec<_>>();
+                                    for send_player in players {
+                                        if let Err(disconnected) = send_player.network_sender.send(game_update_msg.clone()) {
                                             error!("Failed to send GameUpdate: {}", disconnected);
                                         }
                                     }
-                                    player.prev_pos.x = player.pos.x;
                                 }
 
-                                let before_drop = inputs.clone();
 
-                                inputs.retain(|input| input.tick > new_tick);
-
-                                for input in &before_drop {
-                                    if input.tick < new_tick {
-                                        log::info!("Dropped input: {:?}", input);
-                                    }
-                                }
                             }
                         } else {
                             if let Err(disconnected) =

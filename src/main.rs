@@ -13,7 +13,7 @@ use ws::*;
 /// /
 ///
 /// /
-pub const TICK_RATE: f32 = 1.;
+pub const TICK_RATE: f32 = 1. / 10.;
 
 pub type GlobalGameState = Arc<RwLock<GameWorld>>;
 
@@ -46,13 +46,20 @@ async fn main() {
     let (tick_tx, tick_rx) = tokio::sync::watch::channel(0_u64);
     let server_tick = tick_rx.clone();
 
+    let mut last_instant = std::time::Instant::now();
     tokio::spawn(async move {
         let mut tick = 0;
         loop {
-            tokio::time::sleep(std::time::Duration::from_secs_f32(TICK_RATE)).await;
-            tick += 1;
-            if let Err(e) = tick_tx.send(tick) {
-                log::error!("Failed to send tick: {}", e);
+            let elapsed = last_instant.elapsed().as_secs_f32();
+            if elapsed >= TICK_RATE {
+                last_instant = std::time::Instant::now();
+                tick += 1;
+                //log::info!("Tick: {}", tick);
+                if let Err(e) = tick_tx.send(tick) {
+                    log::error!("Failed to send tick: {}", e);
+                }
+            } else {
+                tokio::task::yield_now().await;
             }
         }
     });

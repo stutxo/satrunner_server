@@ -21,14 +21,31 @@ pub struct WorldUpdate {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct NewPos {
-    pub pos: f32,
+    pub input: Vec2,
     pub tick: u64,
     pub id: Uuid,
+    pub pos: f32,
+    pub tick_adjustment: f64,
+    pub adjustment_iteration: u64,
 }
 
 impl NewPos {
-    pub fn new(pos: f32, tick: u64, id: Uuid) -> Self {
-        Self { pos, tick, id }
+    pub fn new(
+        input: Vec2,
+        tick: u64,
+        id: Uuid,
+        pos: f32,
+        tick_adjustment: f64,
+        adjustment_iteration: u64,
+    ) -> Self {
+        Self {
+            input,
+            tick,
+            id,
+            pos,
+            tick_adjustment,
+            adjustment_iteration,
+        }
     }
 }
 
