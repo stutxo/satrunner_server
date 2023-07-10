@@ -149,6 +149,15 @@ pub async fn new_websocket(
                                             tick,
                                             tick_adjustment
                                         );
+
+                                        game_update = Some(NetworkMessage::GameUpdate(NewPos::new(
+                                            player.target,
+                                            new_tick,
+                                            client_id,
+                                            player.pos.x,
+                                            tick_adjustment,
+                                            adjusment_iteration,
+                                        )));
                                         false // this will remove the input from the vec
                                     },
                                     _ => true, // keep the input in the vec
