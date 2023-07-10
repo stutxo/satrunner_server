@@ -3,17 +3,13 @@ use tokio::sync::{mpsc::UnboundedSender, RwLock};
 use uuid::Uuid;
 use warp::Filter;
 
-mod game_loop;
 mod messages;
 mod ws;
 
 use messages::*;
 use ws::*;
-////
-/// /
-///
-/// /
-pub const TICK_RATE: f32 = 1. / 10.;
+
+pub const TICK_RATE: f32 = 1. / 30.;
 
 pub type GlobalGameState = Arc<RwLock<GameWorld>>;
 

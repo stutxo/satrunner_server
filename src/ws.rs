@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use futures_util::{pin_mut, FutureExt, SinkExt, StreamExt};
 
@@ -7,10 +7,7 @@ use log::{debug, error};
 use tokio::sync::{mpsc, oneshot, watch::Receiver, Mutex};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use uuid::Uuid;
-use warp::{
-    hyper::server,
-    ws::{Message, WebSocket},
-};
+use warp::ws::{Message, WebSocket};
 
 use crate::{
     messages::{NetworkMessage, NewGame, NewPos, PlayerInput},
