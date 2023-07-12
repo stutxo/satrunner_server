@@ -4,7 +4,7 @@ use futures_util::{pin_mut, FutureExt, SinkExt, StreamExt};
 
 use glam::{Vec2, Vec3};
 use log::{debug, error};
-use tokio::sync::{mpsc, oneshot, watch::Receiver, Mutex};
+use tokio::sync::{mpsc, oneshot, watch::Receiver, Mutex, RwLock};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use uuid::Uuid;
 use warp::ws::{Message, WebSocket};
@@ -61,6 +61,7 @@ pub async fn new_websocket(
     ws: WebSocket,
     game_state: GlobalGameState,
     mut server_tick: Receiver<u64>,
+    mut dots: Arc<RwLock<Vec<Vec3>>>,
 ) {
     let (mut ws_tx, mut ws_rx) = ws.split();
 
@@ -156,11 +157,6 @@ pub async fn new_websocket(
                                             tick_adjustment
                                         );
 
-                                        log::info!(
-                                            "adjuct complete: {:?}",
-                                            adjust_complete
-                                        );
-
                                         game_update = Some(NetworkMessage::GameUpdate(NewPos::new(
                                             player.target,
                                             new_tick,
@@ -203,16 +199,29 @@ pub async fn new_websocket(
                                          }
                                         },
                                     _ => { adjust_complete = true;
+                                        // log::info!("tick diff {:?},",input.tick - new_tick );
                                         true}, // keep the input in the vec
                                 });
                                 player.apply_input();
+
+                                let dots = &mut dots.write().await;
+
+
+                                for i in (0..dots.len()).rev() {
+                                    let dot = &dots[i];
+                                    if (dot.x - player.pos.x).abs() < 1.0 && (dot.y - player.pos.y).abs() < 1.0 {
+                                        player.score += 1;
+                                        dots.remove(i);
+                                        log::info!("PLAYER HIT A DOT!!!: {}", player.pos.x);
+                                    }
+                                }
 
                                 if new_tick % 100 == 0 {
                                     log::info!(
                                         "player pos: {:?}, tick {:?}",
                                         player.pos.x, new_tick
                                     );
-                               }
+                            }
                                 if let Some(game_update_msg) = game_update {
                                     let players = game_state.read().await.players.values().cloned().collect::<Vec<_>>();
                                     for send_player in players {
@@ -226,7 +235,7 @@ pub async fn new_websocket(
                             }
                         } else {
                             if let Err(disconnected) =
-                                tx_clone.send(NetworkMessage::NewGame(NewGame::new(client_id, new_tick)))
+                                tx_clone.send(NetworkMessage::NewGame(NewGame::new(client_id, new_tick, game_state.read().await.rng)))
                             {
                                 error!("Failed to send NewGame: {}", disconnected);
                             }

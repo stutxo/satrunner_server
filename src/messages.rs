@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use glam::Vec2;
+use glam::{Vec2, Vec3};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -87,10 +87,15 @@ impl PlayerInput {
 pub struct NewGame {
     pub id: Uuid,
     pub server_tick: u64,
+    pub rng_seed: u64,
 }
 
 impl NewGame {
-    pub fn new(id: Uuid, server_tick: u64) -> Self {
-        Self { id, server_tick }
+    pub fn new(id: Uuid, server_tick: u64, rng_seed: u64) -> Self {
+        Self {
+            id,
+            server_tick,
+            rng_seed,
+        }
     }
 }
