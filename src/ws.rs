@@ -110,6 +110,8 @@ pub async fn new_websocket(
     tokio::task::spawn(async move {
         let mut sent_new_game = false;
         let mut adjusment_iteration = 0;
+        let mut msg_sent: Vec<u64> = Vec::new();
+        let mut adjust_complete = true;
         pin_mut!(cancel_rx);
         loop {
             tokio::select! {
@@ -122,8 +124,11 @@ pub async fn new_websocket(
 
                                 let mut game_update: Option<NetworkMessage> = None;
 
+
+
                                 inputs.retain(|input| match input.tick {
                                     tick if tick == new_tick => {
+
                                         player.target = input.target;
                                         game_update = Some(NetworkMessage::GameUpdate(NewPos::new(
                                             player.target,
@@ -137,10 +142,48 @@ pub async fn new_websocket(
                                     },
                                     tick if tick < new_tick => {
                                         let diff = new_tick as f64 - tick as f64;
-                                        tick_adjustment  = -diff;
+
+                                        if adjust_complete {
                                         adjusment_iteration += 1;
+                                        }
+                                        adjust_complete = false;
+                                        tick_adjustment  = -diff;
                                         log::error!(
-                                            "process input: {:?}, server tick {:?},, client tick {:?} tick_adjustment: {:?}",
+                                            "BEHIND!! process input: {:?}, server tick {:?},, client tick {:?} tick_adjustment: {:?}",
+                                            player.target,
+                                            new_tick,
+                                            tick,
+                                            tick_adjustment
+                                        );
+
+                                        log::info!(
+                                            "adjuct complete: {:?}",
+                                            adjust_complete
+                                        );
+
+                                        game_update = Some(NetworkMessage::GameUpdate(NewPos::new(
+                                            player.target,
+                                            new_tick,
+                                            client_id,
+                                            player.pos.x,
+                                            tick_adjustment,
+                                            adjusment_iteration,
+                                        )));
+                                        false // this will remove the input from the vec
+                                    },
+                                    tick if tick > new_tick + 4 => {
+                                        if msg_sent.contains(&tick) {
+                                        true
+                                         } else {
+
+                                        let diff = tick as f64 - new_tick as f64;
+                                        tick_adjustment  = diff;
+                                        if adjust_complete {
+                                            adjusment_iteration += 1;
+                                            }
+                                            adjust_complete = false;
+                                        log::debug!(
+                                            "AHEAD!! process input: {:?}, server tick {:?},, client tick {:?} tick_adjustment: {:?}",
                                             player.target,
                                             new_tick,
                                             tick,
@@ -155,9 +198,12 @@ pub async fn new_websocket(
                                             tick_adjustment,
                                             adjusment_iteration,
                                         )));
-                                        false // this will remove the input from the vec
-                                    },
-                                    _ => true, // keep the input in the vec
+                                        msg_sent.push(tick);
+                                        true
+                                         }
+                                        },
+                                    _ => { adjust_complete = true;
+                                        true}, // keep the input in the vec
                                 });
                                 player.apply_input();
 
@@ -166,7 +212,7 @@ pub async fn new_websocket(
                                         "player pos: {:?}, tick {:?}",
                                         player.pos.x, new_tick
                                     );
-                                }
+                               }
                                 if let Some(game_update_msg) = game_update {
                                     let players = game_state.read().await.players.values().cloned().collect::<Vec<_>>();
                                     for send_player in players {
@@ -202,6 +248,7 @@ pub async fn new_websocket(
                 if let Ok(input) = msg.to_str() {
                     match serde_json::from_str::<PlayerInput>(input) {
                         Ok(new_input) => {
+                            //log::info!("got input: {:?}", new_input);
                             pending_inputs_clone.lock().await.push(new_input.clone());
                         }
                         Err(e) => {
