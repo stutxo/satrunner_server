@@ -1,3 +1,4 @@
+use game_loop::WORLD_BOUNDS;
 use glam::Vec3;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -11,6 +12,7 @@ mod ws;
 
 use messages::*;
 use ws::*;
+mod game_loop;
 
 pub const TICK_RATE: f32 = 1. / 30.;
 
