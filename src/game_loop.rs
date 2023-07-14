@@ -51,6 +51,23 @@ impl Player {
             Vec2::ZERO
         }
     }
+
+    pub fn create_game_update_message(
+        &self,
+        new_tick: u64,
+        client_id: Uuid,
+        tick_adjustment: f64,
+        adjusment_iteration: u64,
+    ) -> NetworkMessage {
+        NetworkMessage::GameUpdate(NewPos::new(
+            [self.target.x, self.target.y],
+            new_tick,
+            client_id,
+            self.pos.x,
+            tick_adjustment,
+            adjusment_iteration,
+        ))
+    }
 }
 
 pub async fn game_loop(
@@ -81,18 +98,10 @@ pub async fn game_loop(
 
                             inputs.retain(|input| match input.tick {
                                 tick if tick == new_tick => {
-
                                     player.target.x = input.target[0];
                                     player.target.y = input.target[1];
-                                    game_update = Some(NetworkMessage::GameUpdate(NewPos::new(
-                                        [player.target.x, player.target.y],
-                                        new_tick,
-                                        client_id,
-                                        player.pos.x,
-                                        tick_adjustment,
-                                        adjusment_iteration,
-                                    )));
-                                    false // this will remove the input from the vec
+                                    game_update = Some(player.create_game_update_message( new_tick, client_id, tick_adjustment, adjusment_iteration));
+                                    false
                                 },
                                 tick if tick < new_tick => {
                                     let diff = new_tick as f64 - tick as f64;
@@ -110,15 +119,8 @@ pub async fn game_loop(
                                         tick_adjustment
                                     );
 
-                                    game_update = Some(NetworkMessage::GameUpdate(NewPos::new(
-                                        [player.target.x, player.target.y],
-                                        new_tick,
-                                        client_id,
-                                        player.pos.x,
-                                        tick_adjustment,
-                                        adjusment_iteration,
-                                    )));
-                                    false // this will remove the input from the vec
+                                    game_update = Some(player.create_game_update_message( new_tick, client_id, tick_adjustment, adjusment_iteration));
+                                    false
                                 },
                                 tick if tick > new_tick + 4 => {
                                     if msg_sent.contains(&tick) {
@@ -139,21 +141,19 @@ pub async fn game_loop(
                                         tick_adjustment
                                     );
 
-                                    game_update = Some(NetworkMessage::GameUpdate(NewPos::new(
-                                        [player.target.x, player.target.y],
-                                        new_tick,
-                                        client_id,
-                                        player.pos.x,
-                                        tick_adjustment,
-                                        adjusment_iteration,
-                                    )));
+                                    game_update = Some(player.create_game_update_message( new_tick, client_id, tick_adjustment, adjusment_iteration));
+
+
                                     msg_sent.push(tick);
                                     true
                                      }
                                     },
-                                _ => { adjust_complete = true;
-                                    // log::info!("tick diff {:?},",input.tick - new_tick );
-                                    true}, // keep the input in the vec
+                                _ => {
+                                    adjust_complete = true;
+                                    game_update = None;
+                                    true
+
+                                },
                             });
                             player.apply_input();
 

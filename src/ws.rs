@@ -10,11 +10,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use uuid::Uuid;
 use warp::ws::{Message, WebSocket};
 
-use crate::{
-    game_loop::game_loop,
-    messages::{NetworkMessage, PlayerInput},
-    GlobalGameState, PlayerState,
-};
+use crate::{game_loop::game_loop, messages::PlayerInput, GlobalGameState, PlayerState};
 
 pub async fn new_websocket(
     ws: WebSocket,

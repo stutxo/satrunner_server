@@ -1,5 +1,5 @@
 use game_loop::WORLD_BOUNDS;
-use glam::Vec3;
+use glam::{Vec2, Vec3};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::{collections::HashMap, sync::Arc};
@@ -46,6 +46,30 @@ impl PlayerState {
         Self {
             current_state: WorldUpdate::default(),
             network_sender,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct WorldUpdate {
+    pub players: HashMap<Uuid, PlayerInfo>,
+    pub rng_seed: u64,
+    pub pending_inputs: Vec<PlayerInput>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PlayerInfo {
+    pub pos: Vec2,
+    pub target: Vec2,
+    pub pending_inputs: Vec<PlayerInput>,
+}
+
+impl Default for PlayerInfo {
+    fn default() -> Self {
+        Self {
+            pos: Vec2::new(0.0, -50.0),
+            target: Vec2::ZERO,
+            pending_inputs: Vec::new(),
         }
     }
 }
