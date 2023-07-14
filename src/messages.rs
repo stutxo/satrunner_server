@@ -1,7 +1,3 @@
-use std::collections::HashMap;
-
-use glam::Vec2;
-
 use speedy::{Readable, Writable};
 use uuid::Uuid;
 

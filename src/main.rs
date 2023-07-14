@@ -1,28 +1,25 @@
-use game_loop::WORLD_BOUNDS;
-use glam::{Vec2, Vec3};
-use rand::{Rng, SeedableRng};
-use rand_chacha::ChaCha8Rng;
+use rand::Rng;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{mpsc::UnboundedSender, RwLock};
 use uuid::Uuid;
 use warp::Filter;
 
+mod dots;
+mod game_loop;
 mod messages;
 mod ws;
 
+use dots::*;
 use messages::*;
 use ws::*;
-mod game_loop;
 
 pub const TICK_RATE: f32 = 1. / 30.;
-
-pub const FALL_SPEED: f32 = 0.5;
 
 pub type GlobalGameState = Arc<RwLock<GameWorld>>;
 
 #[derive(Debug, Clone, Default)]
 pub struct GameWorld {
-    pub players: HashMap<Uuid, PlayerState>,
+    pub players: HashMap<Uuid, UnboundedSender<NetworkMessage>>,
     pub rng: u64,
 }
 
@@ -31,45 +28,6 @@ impl GameWorld {
         Self {
             players: HashMap::new(),
             rng,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct PlayerState {
-    pub current_state: WorldUpdate,
-    pub network_sender: UnboundedSender<NetworkMessage>,
-}
-
-impl PlayerState {
-    pub fn new(network_sender: UnboundedSender<NetworkMessage>) -> Self {
-        Self {
-            current_state: WorldUpdate::default(),
-            network_sender,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct WorldUpdate {
-    pub players: HashMap<Uuid, PlayerInfo>,
-    pub rng_seed: u64,
-    pub pending_inputs: Vec<PlayerInput>,
-}
-
-#[derive(Debug, Clone)]
-pub struct PlayerInfo {
-    pub pos: Vec2,
-    pub target: Vec2,
-    pub pending_inputs: Vec<PlayerInput>,
-}
-
-impl Default for PlayerInfo {
-    fn default() -> Self {
-        Self {
-            pos: Vec2::new(0.0, -50.0),
-            target: Vec2::ZERO,
-            pending_inputs: Vec::new(),
         }
     }
 }
@@ -85,49 +43,7 @@ async fn main() {
     let (tick_tx, tick_rx) = tokio::sync::watch::channel(0_u64);
     let server_tick = tick_rx.clone();
 
-    let mut last_instant = std::time::Instant::now();
-    tokio::spawn(async move {
-        let mut tick = 0;
-        loop {
-            let elapsed = last_instant.elapsed().as_secs_f32();
-            if elapsed >= TICK_RATE {
-                last_instant = std::time::Instant::now();
-                tick += 1;
-
-                let mut dots = dots_clone.write().await;
-
-                let seed = rng_seed ^ tick;
-                let mut rng = ChaCha8Rng::seed_from_u64(seed);
-
-                for _ in 1..2 {
-                    let x_position: f32 = rng.gen_range(-WORLD_BOUNDS..WORLD_BOUNDS);
-
-                    let y_position: f32 = 25.;
-
-                    let dot_start = Vec3::new(x_position, y_position, 0.0);
-                    dots.push(dot_start);
-                }
-
-                for dot in dots.iter_mut() {
-                    dot.y += FALL_SPEED * -1.0;
-                }
-
-                dots.retain(|dot| {
-                    dot.y >= -WORLD_BOUNDS
-                        && dot.y <= WORLD_BOUNDS
-                        && dot.x >= -WORLD_BOUNDS
-                        && dot.x <= WORLD_BOUNDS
-                });
-
-                //log::info!("Tick: {}", tick);
-                if let Err(e) = tick_tx.send(tick) {
-                    log::error!("Failed to send tick: {}", e);
-                }
-            } else {
-                tokio::task::yield_now().await;
-            }
-        }
-    });
+    tokio::spawn(generate_dots(rng_seed, dots_clone, tick_tx));
 
     let game_state = warp::any().map(move || game_state.clone());
     let dots = warp::any().map(move || dots.clone());
