@@ -6,6 +6,7 @@ use uuid::Uuid;
 pub enum NetworkMessage {
     GameUpdate(NewPos),
     NewGame(NewGame),
+    ScoreUpdate(Score),
 }
 
 #[derive(Readable, Writable, Debug, Clone, Default)]
@@ -14,7 +15,7 @@ pub struct NewPos {
     pub tick: u64,
     pub id: Uuid,
     pub pos: f32,
-    pub tick_adjustment: f64,
+    pub tick_adjustment: i64,
     pub adjustment_iteration: u64,
 }
 
@@ -24,7 +25,7 @@ impl NewPos {
         tick: u64,
         id: Uuid,
         pos: f32,
-        tick_adjustment: f64,
+        tick_adjustment: i64,
         adjustment_iteration: u64,
     ) -> Self {
         Self {
@@ -59,5 +60,17 @@ impl NewGame {
             server_tick,
             rng_seed,
         }
+    }
+}
+
+#[derive(Readable, Writable, Debug, Clone)]
+pub struct Score {
+    pub id: Uuid,
+    pub score: usize,
+}
+
+impl Score {
+    pub fn new(id: Uuid, score: usize) -> Self {
+        Self { id, score }
     }
 }

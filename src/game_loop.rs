@@ -7,7 +7,7 @@ use tokio::sync::{mpsc, watch::Receiver, Mutex, RwLock};
 use uuid::Uuid;
 
 use crate::{
-    messages::{NetworkMessage, NewGame, NewPos, PlayerInput},
+    messages::{NetworkMessage, NewGame, NewPos, PlayerInput, Score},
     GlobalGameState,
 };
 
@@ -58,7 +58,7 @@ impl Player {
         &self,
         new_tick: u64,
         client_id: Uuid,
-        tick_adjustment: f64,
+        tick_adjustment: i64,
         adjusment_iteration: u64,
     ) -> NetworkMessage {
         NetworkMessage::GameUpdate(NewPos::new(
@@ -83,7 +83,7 @@ pub async fn game_loop(
 ) {
     let mut player = Player::new(client_id);
     let mut sent_new_game = false;
-    let mut adjusment_iteration = 0;
+    let mut adjusment_iteration: u64 = 0;
     let mut msg_sent: Vec<u64> = Vec::new();
     let mut adjust_complete = true;
     pin_mut!(cancel_rx);
@@ -93,52 +93,53 @@ pub async fn game_loop(
                 let new_tick = *server_tick.borrow();
                 if sent_new_game {
                     let mut inputs = pending_inputs.lock().await;
-                    let mut tick_adjustment: f64 = 0.;
+                    let mut tick_adjustment: i64 = 0;
                     let mut game_update: Option<NetworkMessage> = None;
 
-                    inputs.retain(|input| match input.tick {
-                        tick if tick == new_tick => {
-                            player.target.x = input.target[0];
-                            player.target.y = input.target[1];
-                            game_update = Some(player.create_game_update_message( new_tick, client_id, tick_adjustment, adjusment_iteration));
-                            false
-                        },
-                        tick if tick < new_tick => {
-                            let diff = new_tick as f64 - tick as f64;
-
-                            if adjust_complete {
-                                adjusment_iteration += 1;
-                            }
-                            adjust_complete = false;
-                            tick_adjustment  = -diff;
-                            debug!("BEHIND: {:?}", tick_adjustment);
-
-                            game_update = Some(player.create_game_update_message( new_tick, client_id, tick_adjustment, adjusment_iteration));
-                            false
-                        },
-                        tick if tick > new_tick + 4 => {
-                            if msg_sent.contains(&tick) {
-                                true
-                            } else {
-                                let diff = tick as f64 - new_tick as f64;
-                                tick_adjustment  = diff;
+                    inputs.retain(|input| {
+                        let mut update_needed = false;
+                        match input.tick {
+                            tick if tick == new_tick => {
+                                player.target.x = input.target[0];
+                                player.target.y = input.target[1];
+                                update_needed = true;
+                                false
+                            },
+                            tick if tick < new_tick => {
+                                let diff = new_tick as i64 - tick as i64;
                                 if adjust_complete {
                                     adjusment_iteration += 1;
                                 }
                                 adjust_complete = false;
-                                debug!("AHEAD: {:?}", tick_adjustment);
-
-                                game_update = Some(player.create_game_update_message( new_tick, client_id, tick_adjustment, adjusment_iteration));
-
-                                msg_sent.push(tick);
+                                tick_adjustment  = -diff;
+                                debug!("BEHIND: {:?}", tick_adjustment);
+                                update_needed = true;
+                                false
+                            },
+                            tick if tick > new_tick + 4 => {
+                                if !msg_sent.contains(&tick) {
+                                    let diff = tick as i64 - new_tick as i64;
+                                    tick_adjustment  = diff;
+                                    if adjust_complete {
+                                        adjusment_iteration += 1;
+                                    }
+                                    adjust_complete = false;
+                                    debug!("AHEAD: {:?}", tick_adjustment);
+                                    msg_sent.push(tick);
+                                    update_needed = true;
+                                }
                                 true
-                            }
-                        },
-                        _ => {
-                            adjust_complete = true;
-                            game_update = None;
-                            true
-                        },
+                            },
+                            _ => {
+                                adjust_complete = true;
+                                true
+                            },
+                        };
+
+                        if update_needed {
+                            game_update = Some(player.create_game_update_message(new_tick, client_id, tick_adjustment, adjusment_iteration));
+                        }
+                        !update_needed
                     });
 
                     player.apply_input();
@@ -150,13 +151,23 @@ pub async fn game_loop(
                         if (dot.x - player.pos.x).abs() < 1.0 && (dot.y - player.pos.y).abs() < 1.0 {
                             player.score += 1;
                             dots.remove(i);
-                           debug!("PLAYER HIT A DOT!!!: {}", player.pos.x);
+
+                            debug!("PLAYER {:?} HIT A DOT!!!: {}, SCORE: {:?}", player.id, player.pos.x, player.score);
+
+                            let score_update_msg = NetworkMessage::ScoreUpdate(Score::new(client_id, player.score));
+
+                            let players = game_state.read().await.players.values().cloned().collect::<Vec<_>>();
+                            for send_player in players {
+                                if let Err(disconnected) = send_player.send(score_update_msg.clone()) {
+                                    error!("Failed to send ScoreUpdate: {}", disconnected);
+                                }
+                            }
                         }
                     }
 
                     if new_tick % 100 == 0 {
                         debug!(
-                            "player pos: {:?}, tick {:?}",
+                            "player {:?} pos: {:?}, tick {:?}", player.id,
                             player.pos.x, new_tick
                         );
                     }
