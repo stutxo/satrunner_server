@@ -45,8 +45,9 @@ impl Player {
 
     pub fn calculate_movement(&self) -> Vec2 {
         let direction = self.target - Vec2::new(self.pos.x, self.pos.y);
+        let tolerance = 0.5;
 
-        if direction.length() != 0.0 {
+        if direction.length() > tolerance {
             direction.normalize() * PLAYER_SPEED
         } else {
             Vec2::ZERO

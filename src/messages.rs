@@ -5,7 +5,6 @@ use uuid::Uuid;
 #[derive(Readable, Writable, Debug, Clone)]
 pub enum NetworkMessage {
     GameUpdate(NewPos),
-    NewInput(PlayerInput),
     NewGame(NewGame),
 }
 
@@ -44,12 +43,6 @@ pub struct PlayerInput {
     pub target: [f32; 2],
     pub id: Uuid,
     pub tick: u64,
-}
-
-impl PlayerInput {
-    pub fn new(target: [f32; 2], id: Uuid, tick: u64) -> Self {
-        Self { target, id, tick }
-    }
 }
 
 #[derive(Readable, Writable, Debug, Clone)]
