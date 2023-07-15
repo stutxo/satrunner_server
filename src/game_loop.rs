@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use futures_util::pin_mut;
 use glam::{Vec2, Vec3};
@@ -7,7 +7,7 @@ use tokio::sync::{mpsc, watch::Receiver, Mutex, RwLock};
 use uuid::Uuid;
 
 use crate::{
-    messages::{NetworkMessage, NewGame, NewPos, PlayerInput, Score},
+    messages::{NetworkMessage, NewGame, NewPos, PlayerInput, PlayerPos, Score},
     GlobalGameState,
 };
 
@@ -144,6 +144,15 @@ pub async fn game_loop(
 
                     player.apply_input();
 
+                    {
+                        let mut game_world = game_state.write().await;
+                        if let Some(player_state) = game_world.players.get_mut(&client_id) {
+                            player_state.pos = player.pos.x;
+                            player_state.target = [player.target.x, player.target.y];
+                        }
+                    }
+
+                {
                     let dots = &mut dots.write().await;
 
                     for i in (0..dots.len()).rev() {
@@ -158,12 +167,13 @@ pub async fn game_loop(
 
                             let players = game_state.read().await.players.values().cloned().collect::<Vec<_>>();
                             for send_player in players {
-                                if let Err(disconnected) = send_player.send(score_update_msg.clone()) {
+                                if let Err(disconnected) = send_player.tx.send(score_update_msg.clone()) {
                                     error!("Failed to send ScoreUpdate: {}", disconnected);
                                 }
                             }
                         }
                     }
+                }
 
                     if new_tick % 100 == 0 {
                         debug!(
@@ -175,14 +185,39 @@ pub async fn game_loop(
                     if let Some(game_update_msg) = game_update {
                         let players = game_state.read().await.players.values().cloned().collect::<Vec<_>>();
                         for send_player in players {
-                            if let Err(disconnected) = send_player.send(game_update_msg.clone()) {
+                            if let Err(disconnected) = send_player.tx.send(game_update_msg.clone()) {
                                 error!("Failed to send GameUpdate: {}", disconnected);
                             }
                         }
                     }
                 } else {
+
+                    let player_connect_msg = NetworkMessage::PlayerConnected(client_id);
+
+                    let players = game_state.read().await.players.iter()
+                    .filter(|&(key, _)| *key != client_id)
+                    .map(|(_, value)| value.clone())
+                    .collect::<Vec<_>>();
+
+                for send_player in players {
+                    if let Err(disconnected) = send_player.tx.send(player_connect_msg.clone()) {
+                        error!("Failed to send ScoreUpdate: {}", disconnected);
+                    }
+                }
+
+                let mut player_positions: HashMap<Uuid, PlayerPos> = HashMap::new();
+
+                // Get a lock on the game state
+                let game_state_lock = game_state.read().await;
+
+                // Iterate over all players and insert their UUID and position into the player_positions HashMap.
+                for (&uuid, player_state) in game_state_lock.players.iter() {
+                    let player = PlayerPos::new(player_state.pos, player_state.target);
+                    player_positions.insert(uuid, player);
+                }
+
                     if let Err(disconnected) =
-                        tx_clone.send(NetworkMessage::NewGame(NewGame::new(client_id, new_tick, game_state.read().await.rng)))
+                        tx_clone.send(NetworkMessage::NewGame(NewGame::new(client_id, new_tick, game_state_lock.rng, player_positions)))
                     {
                         error!("Failed to send NewGame: {}", disconnected);
                     }
@@ -190,6 +225,16 @@ pub async fn game_loop(
                 }
             }
             _ = cancel_rx.as_mut().get_mut() => {
+                let player_disconnected_msg = NetworkMessage::PlayerDisconnected(player.id);
+
+
+                let players = game_state.read().await.players.values().cloned().collect::<Vec<_>>();
+                for send_player in players {
+                    if let Err(disconnected) = send_player.tx.send(player_disconnected_msg.clone()) {
+                        error!("Failed to send ScoreUpdate: {}", disconnected);
+                    }
+
+                }
                 break;
             }
         }

@@ -19,7 +19,7 @@ pub type GlobalGameState = Arc<RwLock<GameWorld>>;
 
 #[derive(Debug, Clone, Default)]
 pub struct GameWorld {
-    pub players: HashMap<Uuid, UnboundedSender<NetworkMessage>>,
+    pub players: HashMap<Uuid, PlayerState>,
     pub rng: u64,
 }
 
@@ -28,6 +28,23 @@ impl GameWorld {
         Self {
             players: HashMap::new(),
             rng,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PlayerState {
+    pub tx: UnboundedSender<NetworkMessage>,
+    pub pos: f32,
+    pub target: [f32; 2],
+}
+
+impl PlayerState {
+    fn new(tx: UnboundedSender<NetworkMessage>) -> Self {
+        Self {
+            tx,
+            pos: 0.,
+            target: [0., 0.],
         }
     }
 }

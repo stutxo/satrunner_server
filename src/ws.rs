@@ -10,7 +10,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use uuid::Uuid;
 use warp::ws::{Message, WebSocket};
 
-use crate::{game_loop::game_loop, messages::PlayerInput, GlobalGameState};
+use crate::{game_loop::game_loop, messages::PlayerInput, GlobalGameState, PlayerState};
 
 pub async fn new_websocket(
     ws: WebSocket,
@@ -26,7 +26,14 @@ pub async fn new_websocket(
 
     let client_id = Uuid::new_v4();
 
-    game_state.write().await.players.insert(client_id, tx);
+    let player_state = PlayerState::new(tx);
+    {
+        game_state
+            .write()
+            .await
+            .players
+            .insert(client_id, player_state);
+    }
 
     let pending_inputs: Arc<Mutex<Vec<PlayerInput>>> = Arc::new(Mutex::new(Vec::new()));
     let pending_inputs_clone = Arc::clone(&pending_inputs);
@@ -88,6 +95,8 @@ pub async fn new_websocket(
     }
 
     debug!("player disconnected: {}", client_id);
-    game_state_clone.write().await.players.remove(&client_id);
+    {
+        game_state_clone.write().await.players.remove(&client_id);
+    }
     cancel_tx.send(()).unwrap();
 }
