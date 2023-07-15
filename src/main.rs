@@ -37,6 +37,7 @@ pub struct PlayerState {
     pub tx: UnboundedSender<NetworkMessage>,
     pub pos: f32,
     pub target: [f32; 2],
+    pub score: usize,
 }
 
 impl PlayerState {
@@ -45,6 +46,7 @@ impl PlayerState {
             tx,
             pos: 0.,
             target: [0., 0.],
+            score: 0,
         }
     }
 }

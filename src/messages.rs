@@ -57,7 +57,7 @@ pub struct NewGame {
     pub id: Uuid,
     pub server_tick: u64,
     pub rng_seed: u64,
-    pub player_positions: HashMap<Uuid, PlayerPos>,
+    pub player_positions: HashMap<Uuid, PlayerInfo>,
 }
 
 impl NewGame {
@@ -65,7 +65,7 @@ impl NewGame {
         id: Uuid,
         server_tick: u64,
         rng_seed: u64,
-        player_positions: HashMap<Uuid, PlayerPos>,
+        player_positions: HashMap<Uuid, PlayerInfo>,
     ) -> Self {
         Self {
             id,
@@ -77,14 +77,15 @@ impl NewGame {
 }
 
 #[derive(Readable, Writable, Debug, Clone)]
-pub struct PlayerPos {
+pub struct PlayerInfo {
     pub pos: f32,
     pub target: [f32; 2],
+    pub score: usize,
 }
 
-impl PlayerPos {
-    pub fn new(pos: f32, target: [f32; 2]) -> Self {
-        Self { pos, target }
+impl PlayerInfo {
+    pub fn new(pos: f32, target: [f32; 2], score: usize) -> Self {
+        Self { pos, target, score }
     }
 }
 

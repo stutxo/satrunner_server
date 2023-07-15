@@ -76,7 +76,7 @@ pub async fn new_websocket(
                 if msg.is_binary() {
                     match PlayerInput::read_from_buffer(msg.as_bytes()) {
                         Ok(new_input) => {
-                            //log::info!("got input: {:?}", new_input);
+                            // log::info!("got input: {:?}", new_input);
                             pending_inputs_clone.lock().await.push(new_input.clone());
                         }
                         Err(e) => {
