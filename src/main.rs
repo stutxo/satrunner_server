@@ -35,18 +35,20 @@ impl GameWorld {
 #[derive(Debug, Clone)]
 pub struct PlayerState {
     pub tx: UnboundedSender<NetworkMessage>,
-    pub pos: f32,
+    pub pos: Option<f32>,
     pub target: [f32; 2],
     pub score: usize,
+    pub name: String,
 }
 
 impl PlayerState {
     fn new(tx: UnboundedSender<NetworkMessage>) -> Self {
         Self {
             tx,
-            pos: 0.,
+            pos: None,
             target: [0., 0.],
             score: 0,
+            name: String::new(),
         }
     }
 }

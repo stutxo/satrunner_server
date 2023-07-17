@@ -3,16 +3,20 @@ use std::collections::HashMap;
 use speedy::{Readable, Writable};
 use uuid::Uuid;
 
-use crate::PlayerState;
-
 // Network messages
 #[derive(Readable, Writable, Debug, Clone)]
 pub enum NetworkMessage {
     GameUpdate(NewPos),
     NewGame(NewGame),
     ScoreUpdate(Score),
-    PlayerConnected(Uuid),
+    PlayerConnected(PlayerConnected),
     PlayerDisconnected(Uuid),
+}
+
+#[derive(Readable, Writable, Debug, Clone)]
+pub enum ClientMessage {
+    PlayerInput(PlayerInput),
+    PlayerName(String),
 }
 
 #[derive(Readable, Writable, Debug, Clone, Default)]
@@ -78,14 +82,20 @@ impl NewGame {
 
 #[derive(Readable, Writable, Debug, Clone)]
 pub struct PlayerInfo {
-    pub pos: f32,
+    pub pos: Option<f32>,
     pub target: [f32; 2],
     pub score: usize,
+    pub name: String,
 }
 
 impl PlayerInfo {
-    pub fn new(pos: f32, target: [f32; 2], score: usize) -> Self {
-        Self { pos, target, score }
+    pub fn new(pos: Option<f32>, target: [f32; 2], score: usize, name: String) -> Self {
+        Self {
+            pos,
+            target,
+            score,
+            name,
+        }
     }
 }
 
@@ -98,5 +108,17 @@ pub struct Score {
 impl Score {
     pub fn new(id: Uuid, score: usize) -> Self {
         Self { id, score }
+    }
+}
+
+#[derive(Readable, Writable, Debug, Clone)]
+pub struct PlayerConnected {
+    pub id: Uuid,
+    pub name: String,
+}
+
+impl PlayerConnected {
+    pub fn new(id: Uuid, name: String) -> Self {
+        Self { id, name }
     }
 }

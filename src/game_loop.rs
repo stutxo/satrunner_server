@@ -2,12 +2,12 @@ use std::{collections::HashMap, sync::Arc};
 
 use futures_util::pin_mut;
 use glam::{Vec2, Vec3};
-use log::{debug, error};
+use log::{debug, error, info};
 use tokio::sync::{mpsc, watch::Receiver, Mutex, RwLock};
 use uuid::Uuid;
 
 use crate::{
-    messages::{NetworkMessage, NewGame, NewPos, PlayerInfo, PlayerInput, Score},
+    messages::{NetworkMessage, NewGame, NewPos, PlayerConnected, PlayerInfo, PlayerInput, Score},
     GlobalGameState,
 };
 
@@ -80,18 +80,53 @@ pub async fn game_loop(
     tx_clone: mpsc::UnboundedSender<NetworkMessage>,
     client_id: Uuid,
     dots: Arc<RwLock<Vec<Vec3>>>,
+    player_name: Arc<Mutex<Option<String>>>,
 ) {
     let mut player = Player::new(client_id);
+
     let mut sent_new_game = false;
+    let mut sent_new_conn = false;
     let mut adjusment_iteration: u64 = 0;
     let mut msg_sent: Vec<u64> = Vec::new();
     let mut adjust_complete = true;
     pin_mut!(cancel_rx);
+
     loop {
         tokio::select! {
             _ = server_tick.changed() => {
                 let new_tick = *server_tick.borrow();
-                if sent_new_game {
+
+                if (player_name.lock().await).is_none() {
+                    if !sent_new_game {
+                        let mut player_positions: HashMap<Uuid, PlayerInfo> = HashMap::new();
+
+                        // Get a lock on the game state
+                        let game_state_lock = game_state.read().await;
+
+                        // Iterate over all players and insert their UUID and position into the player_positions HashMap.
+                        for (&uuid, player_state) in game_state_lock.players.iter() {
+
+
+                            let player = PlayerInfo::new(player_state.pos, player_state.target, player_state.score, player_state.name.clone());
+
+                             player_positions.insert(uuid, player);
+                            }
+                        info!("Sending NewGame to client: {}", client_id);
+
+                        if let Err(disconnected) = tx_clone.send(NetworkMessage::NewGame(NewGame::new(
+                            client_id,
+                            new_tick,
+                            game_state_lock.rng,
+                            player_positions,
+                        ))) {
+                            error!("Failed to send NewGame: {}", disconnected);
+                        }
+
+                        sent_new_game = true;
+                    }
+                } else if sent_new_game {
+
+
                     let mut inputs = pending_inputs.lock().await;
                     let mut tick_adjustment: i64 = 0;
                     let mut game_update: Option<NetworkMessage> = None;
@@ -182,11 +217,14 @@ pub async fn game_loop(
                     {
                         let mut game_world = game_state.write().await;
                         if let Some(player_state) = game_world.players.get_mut(&client_id) {
-                            player_state.pos = player.pos.x;
+                            player_state.pos = Some(player.pos.x);
                             player_state.target = [player.target.x, player.target.y];
                             player_state.score = player.score;
+                            player_state.name = player_name.lock().await.clone().unwrap();
                         }
                     }
+
+
 
                     if let Some(game_update_msg) = game_update {
                         let players = game_state
@@ -202,44 +240,6 @@ pub async fn game_loop(
                             }
                         }
                     }
-                } else {
-                    let player_connect_msg = NetworkMessage::PlayerConnected(client_id);
-
-                    let players = game_state
-                        .read()
-                        .await
-                        .players
-                        .iter()
-                        .filter(|&(key, _)| *key != client_id)
-                        .map(|(_, value)| value.clone())
-                        .collect::<Vec<_>>();
-
-                    for send_player in players {
-                        if let Err(disconnected) = send_player.tx.send(player_connect_msg.clone()) {
-                            error!("Failed to send ScoreUpdate: {}", disconnected);
-                        }
-                    }
-
-                    let mut player_positions: HashMap<Uuid, PlayerInfo> = HashMap::new();
-
-                    // Get a lock on the game state
-                    let game_state_lock = game_state.read().await;
-
-                    // Iterate over all players and insert their UUID and position into the player_positions HashMap.
-                    for (&uuid, player_state) in game_state_lock.players.iter() {
-                        let player = PlayerInfo::new(player_state.pos, player_state.target, player_state.score);
-                        player_positions.insert(uuid, player);
-                    }
-
-                    if let Err(disconnected) = tx_clone.send(NetworkMessage::NewGame(NewGame::new(
-                        client_id,
-                        new_tick,
-                        game_state_lock.rng,
-                        player_positions,
-                    ))) {
-                        error!("Failed to send NewGame: {}", disconnected);
-                    }
-                    sent_new_game = true;
                 }
             }
             _ = cancel_rx.as_mut().get_mut() => {

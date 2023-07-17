@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{f32::consts::E, sync::Arc};
 
 use futures_util::{FutureExt, SinkExt, StreamExt};
 
@@ -10,7 +10,11 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use uuid::Uuid;
 use warp::ws::{Message, WebSocket};
 
-use crate::{game_loop::game_loop, messages::PlayerInput, GlobalGameState, PlayerState};
+use crate::{
+    game_loop::{game_loop, Player},
+    messages::{ClientMessage, NetworkMessage, PlayerConnected, PlayerInput},
+    GlobalGameState, PlayerState,
+};
 
 pub async fn new_websocket(
     ws: WebSocket,
@@ -37,6 +41,8 @@ pub async fn new_websocket(
 
     let pending_inputs: Arc<Mutex<Vec<PlayerInput>>> = Arc::new(Mutex::new(Vec::new()));
     let pending_inputs_clone = Arc::clone(&pending_inputs);
+    let player_name: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let player_name_clone = Arc::clone(&player_name);
     let game_state_clone = Arc::clone(&game_state);
 
     let (cancel_tx, cancel_rx) = oneshot::channel();
@@ -51,6 +57,7 @@ pub async fn new_websocket(
             tx_clone,
             client_id,
             dots,
+            player_name,
         )
         .await;
     });
@@ -74,13 +81,41 @@ pub async fn new_websocket(
         match result {
             Ok(msg) => {
                 if msg.is_binary() {
-                    match PlayerInput::read_from_buffer(msg.as_bytes()) {
-                        Ok(new_input) => {
+                    match ClientMessage::read_from_buffer(msg.as_bytes()) {
+                        Ok(ClientMessage::PlayerName(name)) => {
+                            debug!("got name: {}", name);
+                            player_name_clone.lock().await.replace(name);
+                            let player_connected = PlayerConnected::new(
+                                client_id,
+                                player_name_clone.lock().await.clone().unwrap(),
+                            );
+                            let player_connect_msg =
+                                NetworkMessage::PlayerConnected(player_connected);
+                            {
+                                let players = game_state_clone
+                                    .read()
+                                    .await
+                                    .players
+                                    .iter()
+                                    .filter(|&(key, _)| *key != client_id)
+                                    .map(|(_, value)| value.clone())
+                                    .collect::<Vec<_>>();
+
+                                for send_player in players {
+                                    if let Err(disconnected) =
+                                        send_player.tx.send(player_connect_msg.clone())
+                                    {
+                                        error!("Failed to send ScoreUpdate: {}", disconnected);
+                                    }
+                                }
+                            }
+                        }
+                        Ok(ClientMessage::PlayerInput(input)) => {
                             // log::info!("got input: {:?}", new_input);
-                            pending_inputs_clone.lock().await.push(new_input.clone());
+                            pending_inputs_clone.lock().await.push(input.clone());
                         }
                         Err(e) => {
-                            error!("Failed to parse message as Vec2: {:?}", e);
+                            error!("error reading message: {}", e);
                         }
                     }
                 } else {
