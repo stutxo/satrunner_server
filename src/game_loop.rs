@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use futures_util::pin_mut;
 use glam::{Vec2, Vec3};
-use log::{error, info};
+use log::{error, warn};
 use tokio::sync::{mpsc, watch::Receiver, Mutex, RwLock};
 use uuid::Uuid;
 
@@ -147,7 +147,7 @@ pub async fn game_loop(
                                 }
                                 adjust_complete = false;
                                 tick_adjustment = -diff;
-                                info!("player {:?} BEHIND {:} ticks", player.id, tick_adjustment);
+                                warn!("player {:?} BEHIND {:} ticks", player.id, tick_adjustment);
                                 update_needed = true;
                                 false
                             },
@@ -162,7 +162,7 @@ pub async fn game_loop(
                                     }
                                     adjust_complete = false;
                                     msg_sent.push(tick);
-                                    info!("player {:?} AHEAD {:} ticks", player.id, tick_adjustment);
+                                    warn!("player {:?} AHEAD {:} ticks", player.id, tick_adjustment);
                                     update_needed = true;
                                 }
                                 true

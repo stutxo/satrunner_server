@@ -3,7 +3,7 @@ use std::sync::Arc;
 use futures_util::{FutureExt, SinkExt, StreamExt};
 
 use glam::Vec3;
-use log::{debug, error, info};
+use log::{error, info};
 use speedy::{Readable, Writable};
 use tokio::sync::{mpsc, oneshot, watch::Receiver, Mutex, RwLock};
 use tokio_stream::wrappers::UnboundedReceiverStream;

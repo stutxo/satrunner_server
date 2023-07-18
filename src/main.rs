@@ -55,7 +55,7 @@ impl PlayerState {
 
 #[tokio::main]
 async fn main() {
-    pretty_env_logger::init();
+    pretty_env_logger::init_timed();
     let rng_seed = rand::thread_rng().gen::<u64>();
     let game_state: GlobalGameState = Arc::new(RwLock::new(GameWorld::new(rng_seed)));
     let dots = Arc::new(RwLock::new(Vec::new()));
@@ -79,5 +79,5 @@ async fn main() {
             ws.on_upgrade(move |socket| new_websocket(socket, game_state, server_tick, dots))
         });
 
-    warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
+    warp::serve(routes).run(([0, 0, 0, 0], 3030)).await;
 }
