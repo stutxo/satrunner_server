@@ -2,12 +2,12 @@ use std::{collections::HashMap, sync::Arc};
 
 use futures_util::pin_mut;
 use glam::{Vec2, Vec3};
-use log::{debug, error, info};
+use log::{error, info};
 use tokio::sync::{mpsc, watch::Receiver, Mutex, RwLock};
 use uuid::Uuid;
 
 use crate::{
-    messages::{NetworkMessage, NewGame, NewPos, PlayerConnected, PlayerInfo, PlayerInput, Score},
+    messages::{NetworkMessage, NewGame, NewPos, PlayerInfo, PlayerInput, Score},
     GlobalGameState,
 };
 
@@ -85,7 +85,6 @@ pub async fn game_loop(
     let mut player = Player::new(client_id);
 
     let mut sent_new_game = false;
-    let mut sent_new_conn = false;
     let mut adjusment_iteration: u64 = 0;
     let mut msg_sent: Vec<u64> = Vec::new();
     let mut adjust_complete = true;
@@ -111,7 +110,7 @@ pub async fn game_loop(
 
                              player_positions.insert(uuid, player);
                             }
-                        info!("Sending NewGame to client: {}", client_id);
+
 
                         if let Err(disconnected) = tx_clone.send(NetworkMessage::NewGame(NewGame::new(
                             client_id,
@@ -141,16 +140,20 @@ pub async fn game_loop(
                                 false
                             },
                             tick if tick < new_tick => {
+
                                 let diff = new_tick as i64 - tick as i64;
                                 if adjust_complete {
                                     adjusment_iteration += 1;
                                 }
                                 adjust_complete = false;
                                 tick_adjustment = -diff;
+                                info!("player {:?} BEHIND {:} ticks", player.id, tick_adjustment);
                                 update_needed = true;
                                 false
                             },
                             tick if tick > new_tick + 4 => {
+
+
                                 if !msg_sent.contains(&tick) {
                                     let diff = tick as i64 - new_tick as i64;
                                     tick_adjustment = diff;
@@ -159,6 +162,7 @@ pub async fn game_loop(
                                     }
                                     adjust_complete = false;
                                     msg_sent.push(tick);
+                                    info!("player {:?} AHEAD {:} ticks", player.id, tick_adjustment);
                                     update_needed = true;
                                 }
                                 true

@@ -1,9 +1,9 @@
-use std::{f32::consts::E, sync::Arc};
+use std::sync::Arc;
 
 use futures_util::{FutureExt, SinkExt, StreamExt};
 
 use glam::Vec3;
-use log::{debug, error};
+use log::{debug, error, info};
 use speedy::{Readable, Writable};
 use tokio::sync::{mpsc, oneshot, watch::Receiver, Mutex, RwLock};
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -11,7 +11,7 @@ use uuid::Uuid;
 use warp::ws::{Message, WebSocket};
 
 use crate::{
-    game_loop::{game_loop, Player},
+    game_loop::game_loop,
     messages::{ClientMessage, NetworkMessage, PlayerConnected, PlayerInput},
     GlobalGameState, PlayerState,
 };
@@ -83,7 +83,7 @@ pub async fn new_websocket(
                 if msg.is_binary() {
                     match ClientMessage::read_from_buffer(msg.as_bytes()) {
                         Ok(ClientMessage::PlayerName(name)) => {
-                            debug!("got name: {}", name);
+                            info!("Player {} connected", name);
                             player_name_clone.lock().await.replace(name);
                             let player_connected = PlayerConnected::new(
                                 client_id,
@@ -129,7 +129,7 @@ pub async fn new_websocket(
         };
     }
 
-    debug!("player disconnected: {}", client_id);
+    info!("player disconnected: {}", client_id);
     {
         game_state_clone.write().await.players.remove(&client_id);
     }
