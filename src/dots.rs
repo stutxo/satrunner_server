@@ -24,7 +24,7 @@ pub async fn generate_dots(
         if elapsed >= TICK_RATE {
             last_instant = std::time::Instant::now();
             tick += 1;
-            info!("TICK: {:?}", tick);
+            //info!("TICK: {:?}", tick);
 
             let mut dots = dots_clone.write().await;
 
