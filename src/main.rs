@@ -70,14 +70,18 @@ async fn main() {
     let dots = warp::any().map(move || dots.clone());
     let server_tick = warp::any().map(move || server_tick.clone());
 
-    let routes = warp::path("run")
+    let health_check = warp::path("health")
+        .and(warp::get())
+        .map(|| warp::reply::with_status("OK", warp::http::StatusCode::OK));
+
+    let routes = health_check.or(warp::path("run")
         .and(warp::ws())
         .and(game_state)
         .and(server_tick)
         .and(dots)
         .map(|ws: warp::ws::Ws, game_state, server_tick, dots| {
             ws.on_upgrade(move |socket| new_websocket(socket, game_state, server_tick, dots))
-        });
+        }));
 
     warp::serve(routes).run(([0, 0, 0, 0], 3030)).await;
 }
