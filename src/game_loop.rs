@@ -151,7 +151,7 @@ pub async fn game_loop(
                                 update_needed = true;
                                 false
                             },
-                            tick if tick > new_tick + 4 => {
+                            tick if tick > new_tick + 8 => {
 
 
                                 if !msg_sent.contains(&tick) {
