@@ -214,7 +214,7 @@ pub async fn game_loop(
                                         let payment_response = zebedee_client.pay_ln_address(&payment).await;
 
                                         match payment_response {
-                                            Ok(response) => info!("Payment sent: {:?}", response),
+                                            Ok(response) => info!("Payment sent: {:?}", response.data),
                                             Err(e) => info!("Payment failed {:?}", e),
                                         }
                                     });

@@ -53,7 +53,7 @@ pub async fn generate_dots(
                 log::error!("Failed to send tick: {}", e);
             }
         } else {
-            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+            tokio::task::yield_now().await;
         }
     }
 }
