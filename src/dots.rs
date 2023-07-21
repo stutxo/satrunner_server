@@ -2,11 +2,10 @@ use std::sync::Arc;
 
 use game_loop::WORLD_BOUNDS;
 use glam::Vec3;
-use log::info;
+
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use tokio::sync::RwLock;
-use warp::log::Info;
 
 use crate::{game_loop, TICK_RATE};
 
@@ -54,7 +53,7 @@ pub async fn generate_dots(
                 log::error!("Failed to send tick: {}", e);
             }
         } else {
-            tokio::task::yield_now().await;
+            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
         }
     }
 }
