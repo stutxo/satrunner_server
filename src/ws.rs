@@ -107,14 +107,22 @@ pub async fn new_websocket(
                             let zebedee_client = game_state_clone.read().await.zbd.clone();
                             let player_name_clone = Arc::clone(&player_name_clone);
                             tokio::spawn(async move {
-                                if let Ok(_validate_response) =
-                                    zebedee_client.validate_ln_address(&ln_address).await
-                                {
-                                    let player_name = PlayerName {
-                                        name,
-                                        ln_address: true,
-                                    };
-                                    player_name_clone.lock().await.replace(player_name);
+                                info!("Validating LN address: {}", name);
+                                let validate_response =
+                                    zebedee_client.validate_ln_address(&ln_address).await;
+
+                                match validate_response {
+                                    Ok(_) => {
+                                        info!("Valid LN address: {}", name);
+                                        let player_name = PlayerName {
+                                            name,
+                                            ln_address: true,
+                                        };
+                                        player_name_clone.lock().await.replace(player_name);
+                                    }
+                                    Err(e) => {
+                                        error!("Invalid LN address: {}", e);
+                                    }
                                 }
                             });
 
