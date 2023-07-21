@@ -10,11 +10,19 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use uuid::Uuid;
 use warp::ws::{Message, WebSocket};
 
+use zebedee_rust::ln_address::*;
+
 use crate::{
     game_loop::game_loop,
     messages::{ClientMessage, NetworkMessage, PlayerConnected, PlayerInput},
     GlobalGameState, PlayerState,
 };
+
+#[derive(Debug, Clone)]
+pub struct PlayerName {
+    pub name: String,
+    pub ln_address: bool,
+}
 
 pub async fn new_websocket(
     ws: WebSocket,
@@ -41,7 +49,7 @@ pub async fn new_websocket(
 
     let pending_inputs: Arc<Mutex<Vec<PlayerInput>>> = Arc::new(Mutex::new(Vec::new()));
     let pending_inputs_clone = Arc::clone(&pending_inputs);
-    let player_name: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let player_name: Arc<Mutex<Option<PlayerName>>> = Arc::new(Mutex::new(None));
     let player_name_clone = Arc::clone(&player_name);
     let game_state_clone = Arc::clone(&game_state);
 
@@ -84,11 +92,34 @@ pub async fn new_websocket(
                     match ClientMessage::read_from_buffer(msg.as_bytes()) {
                         Ok(ClientMessage::PlayerName(name)) => {
                             info!("Player {} connected", name);
-                            player_name_clone.lock().await.replace(name);
-                            let player_connected = PlayerConnected::new(
-                                client_id,
-                                player_name_clone.lock().await.clone().unwrap(),
-                            );
+                            //check if name is ln_address
+                            let name_clone = name.clone();
+
+                            let ln_address = LnAddress {
+                                address: name.clone(),
+                            };
+                            let player_name = PlayerName {
+                                name: name.clone(),
+                                ln_address: false,
+                            };
+                            player_name_clone.lock().await.replace(player_name);
+
+                            let zebedee_client = game_state_clone.read().await.zbd.clone();
+                            let player_name_clone = Arc::clone(&player_name_clone);
+                            tokio::spawn(async move {
+                                if let Ok(_validate_response) =
+                                    zebedee_client.validate_ln_address(&ln_address).await
+                                {
+                                    let player_name = PlayerName {
+                                        name,
+                                        ln_address: true,
+                                    };
+                                    player_name_clone.lock().await.replace(player_name);
+                                }
+                            });
+
+                            let player_connected = PlayerConnected::new(client_id, name_clone);
+
                             let player_connect_msg =
                                 NetworkMessage::PlayerConnected(player_connected);
                             {

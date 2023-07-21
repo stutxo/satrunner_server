@@ -1,8 +1,9 @@
 use rand::Rng;
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, env, sync::Arc};
 use tokio::sync::{mpsc::UnboundedSender, RwLock};
 use uuid::Uuid;
 use warp::Filter;
+use zebedee_rust::ZebedeeClient;
 
 mod dots;
 mod game_loop;
@@ -21,13 +22,15 @@ pub type GlobalGameState = Arc<RwLock<GameWorld>>;
 pub struct GameWorld {
     pub players: HashMap<Uuid, PlayerState>,
     pub rng: u64,
+    pub zbd: ZebedeeClient,
 }
 
 impl GameWorld {
-    fn new(rng: u64) -> Self {
+    fn new(rng: u64, zbd: ZebedeeClient) -> Self {
         Self {
             players: HashMap::new(),
             rng,
+            zbd,
         }
     }
 }
@@ -56,15 +59,20 @@ impl PlayerState {
 #[tokio::main]
 async fn main() {
     pretty_env_logger::init_timed();
+
+    let apikey: String = env::var("ZBD_API_KEY").unwrap();
+    let zebedee_client = ZebedeeClient::new().apikey(apikey).build();
+
     let rng_seed = rand::thread_rng().gen::<u64>();
-    let game_state: GlobalGameState = Arc::new(RwLock::new(GameWorld::new(rng_seed)));
+    let game_state: GlobalGameState =
+        Arc::new(RwLock::new(GameWorld::new(rng_seed, zebedee_client)));
     let dots = Arc::new(RwLock::new(Vec::new()));
     let dots_clone = dots.clone();
 
     let (tick_tx, tick_rx) = tokio::sync::watch::channel(0_u64);
     let server_tick = tick_rx.clone();
 
-    tokio::spawn(generate_dots(rng_seed, dots_clone, tick_tx));
+    tokio::spawn(async move { generate_dots(rng_seed, dots_clone, tick_tx).await });
 
     let game_state = warp::any().map(move || game_state.clone());
     let dots = warp::any().map(move || dots.clone());

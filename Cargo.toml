@@ -16,6 +16,7 @@ glam = "0.24.1"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
 speedy = {version = "0.8.6", features = ["uuid"]}
+zebedee-rust = "0.4.4"
 
 [dependencies.uuid]
 version = "1.4.0"

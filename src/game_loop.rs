@@ -2,12 +2,14 @@ use std::{collections::HashMap, sync::Arc};
 
 use futures_util::pin_mut;
 use glam::{Vec2, Vec3};
-use log::{error, warn};
+use log::{error, info, warn};
 use tokio::sync::{mpsc, watch::Receiver, Mutex, RwLock};
 use uuid::Uuid;
+use zebedee_rust::ln_address::LnPayment;
 
 use crate::{
     messages::{NetworkMessage, NewGame, NewPos, PlayerInfo, PlayerInput, Score},
+    ws::PlayerName,
     GlobalGameState,
 };
 
@@ -80,7 +82,7 @@ pub async fn game_loop(
     tx_clone: mpsc::UnboundedSender<NetworkMessage>,
     client_id: Uuid,
     dots: Arc<RwLock<Vec<Vec3>>>,
-    player_name: Arc<Mutex<Option<String>>>,
+    player_name: Arc<Mutex<Option<PlayerName>>>,
 ) {
     let mut player = Player::new(client_id);
 
@@ -104,7 +106,6 @@ pub async fn game_loop(
 
                         // Iterate over all players and insert their UUID and position into the player_positions HashMap.
                         for (&uuid, player_state) in game_state_lock.players.iter() {
-
 
                             let player = PlayerInfo::new(player_state.pos, player_state.target, player_state.score, player_state.name.clone());
 
@@ -200,6 +201,25 @@ pub async fn game_loop(
                                     player.score,
                                 ));
 
+                                if player_name.lock().await.clone().unwrap().ln_address {
+                                    let zebedee_client = game_state.read().await.zbd.clone();
+
+                                    let payment = LnPayment {
+                                        ln_address: player_name.lock().await.clone().unwrap().name,
+                                        amount: String::from("1000"),
+                                        ..Default::default()
+                                    };
+
+                                    tokio::spawn(async move {
+                                        let payment_response = zebedee_client.pay_ln_address(&payment).await;
+
+                                        match payment_response {
+                                            Ok(response) => info!("Payment sent: {:?}", response),
+                                            Err(e) => info!("Payment failed {:?}", e),
+                                        }
+                                    });
+                                }
+
                                 let players = game_state
                                     .read()
                                     .await
@@ -224,11 +244,9 @@ pub async fn game_loop(
                             player_state.pos = Some(player.pos.x);
                             player_state.target = [player.target.x, player.target.y];
                             player_state.score = player.score;
-                            player_state.name = player_name.lock().await.clone().unwrap();
+                            player_state.name = player_name.lock().await.clone().unwrap().name;
                         }
                     }
-
-
 
                     if let Some(game_update_msg) = game_update {
                         let players = game_state
