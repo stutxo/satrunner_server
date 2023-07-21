@@ -1,3 +1,4 @@
+use log::info;
 use rand::Rng;
 use std::{collections::HashMap, env, sync::Arc};
 use tokio::sync::{mpsc::UnboundedSender, RwLock};
@@ -61,6 +62,7 @@ async fn main() {
     pretty_env_logger::init_timed();
 
     let apikey: String = env::var("ZBD_API_KEY").unwrap();
+    info!("apikey = {}", apikey);
     let zebedee_client = ZebedeeClient::new().apikey(apikey).build();
 
     let rng_seed = rand::thread_rng().gen::<u64>();
