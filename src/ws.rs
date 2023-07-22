@@ -75,7 +75,9 @@ pub async fn new_websocket(
         loop {
             tokio::select! {
                 _ = interval.tick() => {
-                    if let Err(e) = ws_tx.send(Message::ping("")).await {
+                    let ping = NetworkMessage::Ping;
+                    let ping = ping.write_to_vec().unwrap();
+                    if let Err(e) = ws_tx.send(Message::binary(ping)).await {
                         error!("Failed to send ping: {}", e);
                         break;
                     }
