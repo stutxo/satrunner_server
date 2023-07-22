@@ -52,6 +52,7 @@ pub async fn generate_dots(
             if let Err(e) = tick_tx.send(tick) {
                 log::error!("Failed to send tick: {}", e);
             }
+            tokio::time::sleep(std::time::Duration::from_secs_f32(0.030)).await;
         } else {
             tokio::task::yield_now().await;
         }
