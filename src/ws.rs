@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use futures_util::{FutureExt, SinkExt, StreamExt};
 
@@ -71,15 +71,26 @@ pub async fn new_websocket(
     });
 
     tokio::task::spawn(async move {
-        while let Some(message) = rx.next().await {
-            let message = message.write_to_vec().unwrap();
+        let mut interval = tokio::time::interval(Duration::from_secs(5));
+        loop {
+            tokio::select! {
+                _ = interval.tick() => {
+                    if let Err(e) = ws_tx.send(Message::ping("")).await {
+                        error!("Failed to send ping: {}", e);
+                        break;
+                    }
+                }
+                Some(message) = rx.next() => {
+                    let message = message.write_to_vec().unwrap();
 
-            //debug!("Sending message: {:?}", send_world_update);
-            match ws_tx.send(Message::binary(message)).await {
-                Ok(_) => {}
-                Err(e) => {
-                    error!("Failed to send message over WebSocket: {}", e);
-                    break;
+                    //debug!("Sending message: {:?}", send_world_update);
+                    match ws_tx.send(Message::binary(message)).await {
+                        Ok(_) => {}
+                        Err(e) => {
+                            error!("Failed to send message over WebSocket: {}", e);
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -157,6 +168,8 @@ pub async fn new_websocket(
                             error!("error reading message: {}", e);
                         }
                     }
+                } else if msg.is_pong() {
+                    info!("got pong");
                 } else {
                     error!("other message: {:?}", msg);
                 }
