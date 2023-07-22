@@ -7,16 +7,14 @@ use uuid::Uuid;
 use warp::Filter;
 use zebedee_rust::ZebedeeClient;
 
-mod dots;
-mod game_loop;
 mod messages;
+mod player;
+mod server_loop;
 mod ws;
 
-use dots::*;
 use messages::*;
+use server_loop::*;
 use ws::*;
-
-pub const TICK_RATE: f32 = 1. / 30.;
 
 pub type GlobalGameState = Arc<RwLock<GameWorld>>;
 
@@ -66,6 +64,7 @@ async fn main() {
     let value: Value = serde_json::from_str(&api_key_json).unwrap();
     let api_key = value["ZBD_API_KEY"].as_str().unwrap().to_string();
     let zebedee_client = ZebedeeClient::new().apikey(api_key).build();
+    //let zebedee_client = ZebedeeClient::new().apikey("test".to_string()).build();
 
     let rng_seed = rand::thread_rng().gen::<u64>();
     let game_state: GlobalGameState =
@@ -76,7 +75,7 @@ async fn main() {
     let (tick_tx, tick_rx) = tokio::sync::watch::channel(0_u64);
     let server_tick = tick_rx.clone();
 
-    tokio::spawn(async move { generate_dots(rng_seed, dots_clone, tick_tx).await });
+    tokio::spawn(async move { server_loop(rng_seed, dots_clone, tick_tx).await });
 
     let game_state = warp::any().map(move || game_state.clone());
     let dots = warp::any().map(move || dots.clone());

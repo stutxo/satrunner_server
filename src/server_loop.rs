@@ -1,34 +1,35 @@
 use std::sync::Arc;
 
-use game_loop::WORLD_BOUNDS;
 use glam::Vec3;
+use player::WORLD_BOUNDS;
 
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use tokio::sync::RwLock;
 
-use crate::{game_loop, TICK_RATE};
+use crate::player;
 
 pub const FALL_SPEED: f32 = 0.5;
+pub const TICK_RATE: f32 = 1.0 / 30.0;
 
-pub async fn generate_dots(
+pub async fn server_loop(
     rng_seed: u64,
     dots_clone: Arc<RwLock<Vec<Vec3>>>,
     tick_tx: tokio::sync::watch::Sender<u64>,
 ) {
     let mut last_instant = std::time::Instant::now();
     let mut tick = 0;
+
     loop {
         let elapsed = last_instant.elapsed().as_secs_f32();
         if elapsed >= TICK_RATE {
             last_instant = std::time::Instant::now();
             tick += 1;
             //info!("TICK: {:?}", tick);
-
-            let mut dots = dots_clone.write().await;
-
             let seed = rng_seed ^ tick;
             let mut rng = ChaCha8Rng::seed_from_u64(seed);
+
+            let mut dots = dots_clone.write().await;
 
             for _ in 1..2 {
                 let x_position: f32 = rng.gen_range(-WORLD_BOUNDS..WORLD_BOUNDS);
@@ -52,9 +53,7 @@ pub async fn generate_dots(
             if let Err(e) = tick_tx.send(tick) {
                 log::error!("Failed to send tick: {}", e);
             }
-            tokio::time::sleep(std::time::Duration::from_secs_f32(0.030)).await;
-        } else {
-            tokio::task::yield_now().await;
+            tokio::time::sleep(std::time::Duration::from_secs_f32(0.028)).await;
         }
     }
 }

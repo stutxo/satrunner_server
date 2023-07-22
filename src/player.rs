@@ -74,7 +74,7 @@ impl Player {
     }
 }
 
-pub async fn game_loop(
+pub async fn handle_player(
     mut server_tick: Receiver<u64>,
     pending_inputs: Arc<Mutex<Vec<PlayerInput>>>,
     cancel_rx: futures_util::future::Fuse<tokio::sync::oneshot::Receiver<()>>,

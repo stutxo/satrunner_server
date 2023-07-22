@@ -13,8 +13,8 @@ use warp::ws::{Message, WebSocket};
 use zebedee_rust::ln_address::*;
 
 use crate::{
-    game_loop::game_loop,
     messages::{ClientMessage, NetworkMessage, PlayerConnected, PlayerInput},
+    player::handle_player,
     GlobalGameState, PlayerState,
 };
 
@@ -57,7 +57,7 @@ pub async fn new_websocket(
     let cancel_rx = cancel_rx.fuse();
 
     tokio::task::spawn(async move {
-        game_loop(
+        handle_player(
             server_tick,
             pending_inputs,
             cancel_rx,
