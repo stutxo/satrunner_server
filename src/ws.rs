@@ -2,10 +2,9 @@ use std::{sync::Arc, time::Duration};
 
 use futures_util::{FutureExt, SinkExt, StreamExt};
 
-use glam::Vec3;
 use log::{error, info};
 use speedy::{Readable, Writable};
-use tokio::sync::{mpsc, oneshot, watch::Receiver, Mutex, RwLock};
+use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use uuid::Uuid;
 use warp::ws::{Message, WebSocket};
@@ -14,9 +13,23 @@ use zebedee_rust::ln_address::*;
 
 use crate::{
     messages::{ClientMessage, NetworkMessage, PlayerConnected, PlayerInput},
-    player::handle_player,
-    GlobalGameState, PlayerState,
+    player::{handle_player, Player},
+    GlobalPlayer, GlobalState,
 };
+
+pub struct PlayerStuff {
+    pub name: Mutex<Option<PlayerName>>,
+    pub inputs: Mutex<Vec<PlayerInput>>,
+}
+
+impl PlayerStuff {
+    pub fn new() -> Self {
+        Self {
+            name: Mutex::new(None),
+            inputs: Mutex::new(Vec::new()),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct PlayerName {
@@ -24,12 +37,7 @@ pub struct PlayerName {
     pub ln_address: bool,
 }
 
-pub async fn new_websocket(
-    ws: WebSocket,
-    game_state: GlobalGameState,
-    server_tick: Receiver<u64>,
-    dots: Arc<RwLock<Vec<Vec3>>>,
-) {
+pub async fn new_websocket(ws: WebSocket, global_state: Arc<Mutex<GlobalState>>) {
     let (mut ws_tx, mut ws_rx) = ws.split();
 
     let (tx, rx) = mpsc::unbounded_channel();
@@ -38,36 +46,26 @@ pub async fn new_websocket(
 
     let client_id = Uuid::new_v4();
 
-    let player_state = PlayerState::new(tx);
+    let player_state = GlobalPlayer::new(tx);
     {
-        game_state
-            .write()
+        global_state
+            .lock()
             .await
             .players
             .insert(client_id, player_state);
     }
 
-    let pending_inputs: Arc<Mutex<Vec<PlayerInput>>> = Arc::new(Mutex::new(Vec::new()));
-    let pending_inputs_clone = Arc::clone(&pending_inputs);
-    let player_name: Arc<Mutex<Option<PlayerName>>> = Arc::new(Mutex::new(None));
-    let player_name_clone = Arc::clone(&player_name);
-    let game_state_clone = Arc::clone(&game_state);
+    let player_stuff: Arc<PlayerStuff> = Arc::new(PlayerStuff::new());
+    let player_stuff_clone = Arc::clone(&player_stuff);
 
     let (cancel_tx, cancel_rx) = oneshot::channel();
     let cancel_rx = cancel_rx.fuse();
 
+    let global_state_clone = Arc::clone(&global_state);
+
     tokio::task::spawn(async move {
-        handle_player(
-            server_tick,
-            pending_inputs,
-            cancel_rx,
-            game_state,
-            tx_clone,
-            client_id,
-            dots,
-            player_name,
-        )
-        .await;
+        let mut player = Player::new(client_id);
+        handle_player(player_stuff, cancel_rx, global_state, tx_clone, &mut player).await;
     });
 
     tokio::task::spawn(async move {
@@ -115,37 +113,50 @@ pub async fn new_websocket(
                                 name: name.clone(),
                                 ln_address: false,
                             };
-                            player_name_clone.lock().await.replace(player_name);
+                            {
+                                player_stuff_clone
+                                    .name
+                                    .lock()
+                                    .await
+                                    .replace(player_name.clone());
+                            }
 
-                            let zebedee_client = game_state_clone.read().await.zbd.clone();
-                            let player_name_clone = Arc::clone(&player_name_clone);
-                            tokio::spawn(async move {
-                                info!("Validating LN address: {}", name);
-                                let validate_response =
-                                    zebedee_client.validate_ln_address(&ln_address).await;
+                            let zebedee_client = global_state_clone.lock().await.zbd.clone();
 
-                                match validate_response {
-                                    Ok(_) => {
-                                        info!("Valid LN address: {}", name);
-                                        let player_name = PlayerName {
-                                            name,
-                                            ln_address: true,
-                                        };
-                                        player_name_clone.lock().await.replace(player_name);
+                            {
+                                let player_stuff_clone_2 = Arc::clone(&player_stuff_clone);
+                                tokio::spawn(async move {
+                                    info!("Validating LN address: {}", name);
+                                    let validate_response =
+                                        zebedee_client.validate_ln_address(&ln_address).await;
+
+                                    match validate_response {
+                                        Ok(_) => {
+                                            info!("Valid LN address: {}", name);
+                                            let player_name = PlayerName {
+                                                name,
+                                                ln_address: true,
+                                            };
+                                            player_stuff_clone_2
+                                                .name
+                                                .lock()
+                                                .await
+                                                .replace(player_name.clone());
+                                        }
+                                        Err(e) => {
+                                            error!("Invalid LN address: {}", e);
+                                        }
                                     }
-                                    Err(e) => {
-                                        error!("Invalid LN address: {}", e);
-                                    }
-                                }
-                            });
+                                });
+                            }
 
                             let player_connected = PlayerConnected::new(client_id, name_clone);
 
                             let player_connect_msg =
                                 NetworkMessage::PlayerConnected(player_connected);
                             {
-                                let players = game_state_clone
-                                    .read()
+                                let players = global_state_clone
+                                    .lock()
                                     .await
                                     .players
                                     .iter()
@@ -163,8 +174,9 @@ pub async fn new_websocket(
                             }
                         }
                         Ok(ClientMessage::PlayerInput(input)) => {
-                            // log::info!("got input: {:?}", new_input);
-                            pending_inputs_clone.lock().await.push(input.clone());
+                            //log::info!("got input: {:?}", input);
+
+                            player_stuff_clone.inputs.lock().await.push(input.clone());
                         }
                         Err(e) => {
                             error!("error reading message: {}", e);
@@ -183,9 +195,8 @@ pub async fn new_websocket(
         };
     }
 
+    global_state_clone.lock().await.players.remove(&client_id);
     info!("player disconnected: {}", client_id);
-    {
-        game_state_clone.write().await.players.remove(&client_id);
-    }
+
     cancel_tx.send(()).unwrap();
 }

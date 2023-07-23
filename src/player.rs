@@ -3,25 +3,27 @@ use std::{collections::HashMap, sync::Arc};
 use futures_util::pin_mut;
 use glam::{Vec2, Vec3};
 use log::{error, info, warn};
-use tokio::sync::{mpsc, watch::Receiver, Mutex, RwLock};
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha8Rng;
+use tokio::sync::{mpsc, Mutex};
 use uuid::Uuid;
 use zebedee_rust::ln_address::LnPayment;
 
 use crate::{
-    messages::{NetworkMessage, NewGame, NewPos, PlayerInfo, PlayerInput, Score},
-    ws::PlayerName,
-    GlobalGameState,
+    messages::{NetworkMessage, NewGame, NewPos, PlayerInfo, Score},
+    ws::PlayerStuff,
+    GlobalState,
 };
 
 pub const WORLD_BOUNDS: f32 = 300.0;
 pub const PLAYER_SPEED: f32 = 1.0;
+pub const FALL_SPEED: f32 = 0.5;
 
 pub struct Player {
     pub target: Vec2,
     pub pos: Vec3,
     pub id: Uuid,
     pub score: usize,
-    pub prev_pos: Vec3,
 }
 
 impl Player {
@@ -31,7 +33,6 @@ impl Player {
             pos: Vec3::new(0.0, -50.0, 0.0),
             id,
             score: 0,
-            prev_pos: Vec3::new(0.0, -50.0, 0.0),
         }
     }
 
@@ -59,14 +60,14 @@ impl Player {
     pub fn create_game_update_message(
         &self,
         new_tick: u64,
-        client_id: Uuid,
+        player_id: Uuid,
         tick_adjustment: i64,
         adjusment_iteration: u64,
     ) -> NetworkMessage {
         NetworkMessage::GameUpdate(NewPos::new(
             [self.target.x, self.target.y],
             new_tick,
-            client_id,
+            player_id,
             self.pos.x,
             tick_adjustment,
             adjusment_iteration,
@@ -75,37 +76,34 @@ impl Player {
 }
 
 pub async fn handle_player(
-    mut server_tick: Receiver<u64>,
-    pending_inputs: Arc<Mutex<Vec<PlayerInput>>>,
+    player_stuff: Arc<PlayerStuff>,
     cancel_rx: futures_util::future::Fuse<tokio::sync::oneshot::Receiver<()>>,
-    game_state: GlobalGameState,
+    global_state: Arc<Mutex<GlobalState>>,
     tx_clone: mpsc::UnboundedSender<NetworkMessage>,
-    client_id: Uuid,
-    dots: Arc<RwLock<Vec<Vec3>>>,
-    player_name: Arc<Mutex<Option<PlayerName>>>,
+    player: &mut Player,
 ) {
-    let mut player = Player::new(client_id);
-
     let mut sent_new_game = false;
     let mut adjusment_iteration: u64 = 0;
     let mut msg_sent: Vec<u64> = Vec::new();
     let mut adjust_complete = true;
     pin_mut!(cancel_rx);
+    let mut dots = Vec::new();
+
+    let mut server_tick = global_state.lock().await.server_tick.clone();
 
     loop {
         tokio::select! {
             _ = server_tick.changed() => {
-                let new_tick = *server_tick.borrow();
 
-                if (player_name.lock().await).is_none() {
+                let new_tick = *global_state.lock().await.server_tick.borrow();
+
+                if (player_stuff.name.lock()
+                .await).is_none() {
                     if !sent_new_game {
                         let mut player_positions: HashMap<Uuid, PlayerInfo> = HashMap::new();
 
-                        // Get a lock on the game state
-                        let game_state_lock = game_state.read().await;
-
                         // Iterate over all players and insert their UUID and position into the player_positions HashMap.
-                        for (&uuid, player_state) in game_state_lock.players.iter() {
+                        for (&uuid, player_state) in global_state.lock().await.players.iter() {
 
                             let player = PlayerInfo::new(player_state.pos, player_state.target, player_state.score, player_state.name.clone());
 
@@ -114,9 +112,9 @@ pub async fn handle_player(
 
 
                         if let Err(disconnected) = tx_clone.send(NetworkMessage::NewGame(NewGame::new(
-                            client_id,
+                            player.id,
                             new_tick,
-                            game_state_lock.rng,
+                            global_state.lock().await.rng_seed,
                             player_positions,
                         ))) {
                             error!("Failed to send NewGame: {}", disconnected);
@@ -127,13 +125,15 @@ pub async fn handle_player(
                 } else if sent_new_game {
 
 
-                    let mut inputs = pending_inputs.lock().await;
+                    let mut inputs = player_stuff.inputs.lock().await;
+                    let inputs = &mut inputs;
+
                     let mut tick_adjustment: i64 = 0;
                     let mut game_update: Option<NetworkMessage> = None;
 
                     inputs.retain(|input| {
                         let mut update_needed = false;
-                        match input.tick {
+                        match input.tick{
                             tick if tick == new_tick => {
                                 player.target.x = input.target[0];
                                 player.target.y = input.target[1];
@@ -177,7 +177,7 @@ pub async fn handle_player(
                         if update_needed {
                             game_update = Some(player.create_game_update_message(
                                 new_tick,
-                                client_id,
+                                player.id,
                                 tick_adjustment,
                                 adjusment_iteration,
                             ));
@@ -187,8 +187,30 @@ pub async fn handle_player(
 
                     player.apply_input();
 
-                    {
-                        let dots = &mut dots.write().await;
+
+
+                        let seed = global_state.lock().await.rng_seed ^ new_tick;
+                        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+
+                        for _ in 1..2 {
+                            let x_position: f32 = rng.gen_range(-WORLD_BOUNDS..WORLD_BOUNDS);
+                            let y_position: f32 = 25.;
+
+                            let dot_start = Vec3::new(x_position, y_position, 0.0);
+                            dots.push(dot_start);
+
+                        }
+
+                        for dot in dots.iter_mut() {
+                            dot.y += FALL_SPEED * -1.0;
+                        }
+
+                        dots.retain(|dot| {
+                            dot.y >= -WORLD_BOUNDS
+                                && dot.y <= WORLD_BOUNDS
+                                && dot.x >= -WORLD_BOUNDS
+                                && dot.x <= WORLD_BOUNDS
+                        });
 
                         for i in (0..dots.len()).rev() {
                             let dot = &dots[i];
@@ -197,15 +219,15 @@ pub async fn handle_player(
                                 dots.remove(i);
 
                                 let score_update_msg = NetworkMessage::ScoreUpdate(Score::new(
-                                    client_id,
+                                    player.id,
                                     player.score,
                                 ));
 
-                                if player_name.lock().await.clone().unwrap().ln_address {
-                                    let zebedee_client = game_state.read().await.zbd.clone();
-
+                                if let Some(player_name) = player_stuff.name.lock().await.clone() {
+                                    let zebedee_client = global_state.lock().await.zbd.clone();
+                                    if player_name.ln_address {
                                     let payment = LnPayment {
-                                        ln_address: player_name.lock().await.clone().unwrap().name,
+                                        ln_address: player_name.name,
                                         amount: String::from("1000"),
                                         ..Default::default()
                                     };
@@ -220,56 +242,54 @@ pub async fn handle_player(
                                     });
                                 }
 
-                                let players = game_state
-                                    .read()
-                                    .await
-                                    .players
-                                    .values()
-                                    .cloned()
-                                    .collect::<Vec<_>>();
-                                for send_player in players {
-                                    if let Err(disconnected) =
-                                        send_player.tx.send(score_update_msg.clone())
-                                    {
-                                        error!("Failed to send ScoreUpdate: {}", disconnected);
-                                    }
-                                }
                             }
-                        }
-                    }
 
-                    {
-                        let mut game_world = game_state.write().await;
-                        if let Some(player_state) = game_world.players.get_mut(&client_id) {
-                            player_state.pos = Some(player.pos.x);
-                            player_state.target = [player.target.x, player.target.y];
-                            player_state.score = player.score;
-                            player_state.name = player_name.lock().await.clone().unwrap().name;
-                        }
-                    }
-
-                    if let Some(game_update_msg) = game_update {
-                        let players = game_state
-                            .read()
-                            .await
+                            let players = global_state.lock().await
                             .players
                             .values()
                             .cloned()
                             .collect::<Vec<_>>();
                         for send_player in players {
-                            if let Err(disconnected) = send_player.tx.send(game_update_msg.clone()) {
-                                error!("Failed to send GameUpdate: {}", disconnected);
+                            if let Err(disconnected) =
+                                send_player.tx.send(score_update_msg.clone())
+                            {
+                                error!("Failed to send ScoreUpdate: {}", disconnected);
                             }
                         }
-                    }
+
+                            }
+                        }
+
+
+                        if let Some(game_update_msg) = game_update {
+                            let players = global_state
+                                .lock()
+                                .await
+                                .players
+                                .values()
+                                .cloned()
+                                .collect::<Vec<_>>();
+                            for send_player in players {
+                                if let Err(disconnected) = send_player.tx.send(game_update_msg.clone()) {
+                                    error!("Failed to send GameUpdate: {}", disconnected);
+                                }
+                            }
+                        }
+
                 }
+                if let Some(player_state) = global_state.lock().await.players.get_mut(&player.id) {
+                    player_state.pos = Some(player.pos.x);
+                    player_state.target = [player.target.x, player.target.y];
+                    player_state.score = player.score;
+                    player_state.name =  player_stuff.name.lock().await.clone().map(|name| name.name).unwrap_or_default();
+                }
+
+
             }
             _ = cancel_rx.as_mut().get_mut() => {
                 let player_disconnected_msg = NetworkMessage::PlayerDisconnected(player.id);
 
-                let players = game_state
-                    .read()
-                    .await
+                let players = global_state.lock().await
                     .players
                     .values()
                     .cloned()
