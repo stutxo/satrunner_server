@@ -9,11 +9,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use uuid::Uuid;
 use warp::ws::{Message, WebSocket};
 
-use crate::{
-    messages::NetworkMessage,
-    player::{handle_player, Player},
-    GlobalPlayer, GlobalState,
-};
+use crate::{messages::NetworkMessage, player::Player, GlobalPlayer, GlobalState};
 #[derive(Debug, Clone)]
 pub struct PlayerName {
     pub name: String,
@@ -49,14 +45,9 @@ pub async fn new_websocket(ws: WebSocket, global_state: Arc<RwLock<GlobalState>>
 
     tokio::task::spawn(async move {
         let mut player = Player::new(client_id);
-        handle_player(
-            cancel_rx,
-            global_state,
-            tx_clone,
-            &mut player,
-            &mut input_rx,
-        )
-        .await;
+        player
+            .handle_player(cancel_rx, global_state, tx_clone, &mut input_rx)
+            .await;
     });
 
     tokio::task::spawn(async move {
