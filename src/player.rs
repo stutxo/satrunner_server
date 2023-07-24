@@ -9,6 +9,7 @@ use speedy::Readable;
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio_stream::{wrappers::UnboundedReceiverStream, StreamExt};
 use uuid::Uuid;
+
 use warp::ws::Message;
 use zebedee_rust::ln_address::{LnAddress, LnPayment};
 
@@ -100,7 +101,7 @@ impl Player {
     ) {
         let mut inputs = Vec::new();
         let mut server_tick = global_state.read().await.server_tick.clone();
-        let is_ln_address = Arc::new(Mutex::new(false));
+        let is_ln_address = Arc::new(RwLock::new(false));
         pin_mut!(cancel_rx);
 
         loop {
@@ -112,18 +113,22 @@ impl Player {
                             Ok(ClientMessage::PlayerName(name)) => {
                                 info!("Player {} connected", name);
                                 //check if name is ln_address
-                                let name_clone = name.clone();
 
-                                let ln_address = LnAddress {
-                                    address: name.clone(),
-                                };
 
                                 self.name = name.clone();
 
-                                let zebedee_client = global_state.read().await.zbd.clone();
+                                let ln_address = LnAddress {
+                                    address: self.name.clone(),
+                                };
+
+                                // let ln_address = LnAddress::new(self.name.clone());
+
+                                // if let Ok (ln_address) = ln_address {
+                                    let zebedee_client = global_state.read().await.zbd.clone();
                                     let is_ln_address_clone = is_ln_address.clone();
+
                                     tokio::spawn(async move {
-                                    let mut is_ln_address_clone = is_ln_address_clone.lock().await;
+                                    let mut is_ln_address_clone = is_ln_address_clone.write().await;
                                         info!("Validating LN address: {}", name);
                                         let validate_response =
                                             zebedee_client.validate_ln_address(&ln_address).await;
@@ -139,9 +144,11 @@ impl Player {
                                             }
                                         }
                                     });
+                                // } else {
+                                //     error!("Invalid address format: {}", name);
+                                // }
 
-
-                    let player_connected = PlayerConnected::new(self.id, name_clone);
+                    let player_connected = PlayerConnected::new(self.id, self.name.clone());
 
                     let player_connect_msg = NetworkMessage::PlayerConnected(player_connected);
 
@@ -303,7 +310,8 @@ impl Player {
 
                                         let zebedee_client = global_state.read().await.zbd.clone();
 
-                                        let is_ln_address = is_ln_address.lock().await;
+
+                                        let is_ln_address = is_ln_address.read().await;
 
                                         if *is_ln_address {
                                         let payment = LnPayment {
@@ -312,11 +320,12 @@ impl Player {
                                             ..Default::default()
                                         };
 
+
                                         tokio::spawn(async move {
                                             let payment_response = zebedee_client.pay_ln_address(&payment).await;
 
                                             match payment_response {
-                                                Ok(response) => info!("Payment sent: {:?}", response.data),
+                                                Ok(response) => info!("Payment sent to {:?}: {:?}", payment.ln_address, response.data),
                                                 Err(e) => info!("Payment failed {:?}", e),
                                             }
                                         });

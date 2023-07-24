@@ -15,7 +15,7 @@ pub async fn server_loop(tick_tx: tokio::sync::watch::Sender<u64>) {
                 log::error!("Failed to send tick: {}", e);
             }
 
-            tokio::time::sleep(std::time::Duration::from_secs_f32(0.028)).await;
+            tokio::time::sleep(std::time::Duration::from_secs_f32(0.030)).await;
         }
     }
 }
