@@ -4,7 +4,7 @@ use futures_util::{FutureExt, SinkExt, StreamExt};
 
 use log::{error, info};
 use speedy::Writable;
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{mpsc, oneshot, RwLock};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use uuid::Uuid;
 use warp::ws::{Message, WebSocket};
@@ -20,7 +20,7 @@ pub struct PlayerName {
     pub ln_address: bool,
 }
 
-pub async fn new_websocket(ws: WebSocket, global_state: Arc<Mutex<GlobalState>>) {
+pub async fn new_websocket(ws: WebSocket, global_state: Arc<RwLock<GlobalState>>) {
     let (mut ws_tx, mut ws_rx) = ws.split();
 
     let (tx, rx) = mpsc::unbounded_channel();
@@ -36,7 +36,7 @@ pub async fn new_websocket(ws: WebSocket, global_state: Arc<Mutex<GlobalState>>)
     let player_state = GlobalPlayer::new(tx);
     {
         global_state
-            .lock()
+            .write()
             .await
             .players
             .insert(client_id, player_state);
@@ -104,7 +104,7 @@ pub async fn new_websocket(ws: WebSocket, global_state: Arc<Mutex<GlobalState>>)
         };
     }
 
-    global_state_clone.lock().await.players.remove(&client_id);
+    global_state_clone.write().await.players.remove(&client_id);
     info!("player disconnected: {}", client_id);
 
     cancel_tx.send(()).unwrap();

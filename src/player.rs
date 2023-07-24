@@ -6,7 +6,7 @@ use log::{error, info, warn};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use speedy::Readable;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio_stream::{wrappers::UnboundedReceiverStream, StreamExt};
 use uuid::Uuid;
 use warp::ws::Message;
@@ -83,7 +83,7 @@ impl Player {
 
 pub async fn handle_player(
     cancel_rx: futures_util::future::Fuse<tokio::sync::oneshot::Receiver<()>>,
-    global_state: Arc<Mutex<GlobalState>>,
+    global_state: Arc<RwLock<GlobalState>>,
     tx_clone: mpsc::UnboundedSender<NetworkMessage>,
     player: &mut Player,
     input_rx: &mut UnboundedReceiverStream<Message>,
@@ -91,13 +91,14 @@ pub async fn handle_player(
     let mut adjusment_iteration: u64 = 0;
     let mut msg_sent: Vec<u64> = Vec::new();
     let mut adjust_complete = true;
-    pin_mut!(cancel_rx);
     let mut dots = Vec::new();
     let mut inputs = Vec::new();
-    let is_ln_address = Arc::new(Mutex::new(false));
     let mut new_game_sent = false;
+    let mut server_tick = global_state.read().await.server_tick.clone();
 
-    let mut server_tick = global_state.lock().await.server_tick.clone();
+    let is_ln_address = Arc::new(Mutex::new(false));
+
+    pin_mut!(cancel_rx);
 
     loop {
         tokio::select! {
@@ -116,7 +117,7 @@ pub async fn handle_player(
 
                             player.name = name.clone();
 
-                            let zebedee_client = global_state.lock().await.zbd.clone();
+                            let zebedee_client = global_state.read().await.zbd.clone();
                                 let is_ln_address_clone = is_ln_address.clone();
                                 tokio::spawn(async move {
                                 let mut is_ln_address_clone = is_ln_address_clone.lock().await;
@@ -142,7 +143,7 @@ pub async fn handle_player(
                 let player_connect_msg = NetworkMessage::PlayerConnected(player_connected);
 
                 let players = global_state
-                    .lock()
+                    .read()
                     .await
                     .players
                     .iter()
@@ -174,12 +175,12 @@ pub async fn handle_player(
             }
             _ = server_tick.changed() => {
 
-                let new_tick = *global_state.lock().await.server_tick.borrow();
+                let new_tick = *global_state.read().await.server_tick.borrow();
 
                 if !new_game_sent{
                     let mut player_positions: HashMap<Uuid, PlayerInfo> = HashMap::new();
 
-                     for (&uuid, player_state) in global_state.lock().await.players.iter() {
+                     for (&uuid, player_state) in global_state.read().await.players.iter() {
                     let player = PlayerInfo::new(
                         player_state.pos,
                         player_state.target,
@@ -193,7 +194,7 @@ pub async fn handle_player(
                     if let Err(disconnected) = tx_clone.send(NetworkMessage::NewGame(NewGame::new(
                     player.id,
                     new_tick,
-                    global_state.lock().await.rng_seed,
+                    global_state.read().await.rng_seed,
                     player_positions,
                     ))) {
                     error!("Failed to send NewGame: {}", disconnected);
@@ -262,7 +263,7 @@ pub async fn handle_player(
 
 
 
-                        let seed = global_state.lock().await.rng_seed ^ new_tick;
+                        let seed = global_state.read().await.rng_seed ^ new_tick;
                         let mut rng = ChaCha8Rng::seed_from_u64(seed);
 
                         for _ in 1..2 {
@@ -297,7 +298,7 @@ pub async fn handle_player(
                                 ));
 
 
-                                    let zebedee_client = global_state.lock().await.zbd.clone();
+                                    let zebedee_client = global_state.read().await.zbd.clone();
 
                                     let is_ln_address = is_ln_address.lock().await;
 
@@ -320,7 +321,7 @@ pub async fn handle_player(
 
                             }
 
-                            let players = global_state.lock().await
+                            let players = global_state.read().await
                             .players
                             .values()
                             .cloned()
@@ -338,7 +339,7 @@ pub async fn handle_player(
 
                         if let Some(game_update_msg) = game_update {
                             let players = global_state
-                                .lock()
+                                .read()
                                 .await
                                 .players
                                 .values()
@@ -353,7 +354,7 @@ pub async fn handle_player(
 
 
 
-                if let Some(player_state) = global_state.lock().await.players.get_mut(&player.id) {
+                if let Some(player_state) = global_state.write().await.players.get_mut(&player.id) {
                     player_state.pos = Some(player.pos.x);
                     player_state.target = [player.target.x, player.target.y];
                     player_state.score = player.score;
@@ -366,7 +367,7 @@ pub async fn handle_player(
             _ = cancel_rx.as_mut().get_mut() => {
                 let player_disconnected_msg = NetworkMessage::PlayerDisconnected(player.id);
 
-                let players = global_state.lock().await
+                let players = global_state.read().await
                     .players
                     .values()
                     .cloned()
