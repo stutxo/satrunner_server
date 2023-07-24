@@ -1703,6 +1703,8 @@ dependencies = [
 [[package]]
 name = "zebedee-rust"
 version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75b03c2f508781a4b2ec07d0b9eb605e5de7c7026b6144c1f606430cbe90c102"
 dependencies = [
  "anyhow",
  "base64-url",

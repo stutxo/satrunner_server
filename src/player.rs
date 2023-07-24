@@ -118,14 +118,14 @@ impl Player {
 
                                 self.name = name.clone();
 
-                                // let ln_address = LnAddress {
-                                //     address: self.name.clone(),
-                                // };
+                                let ln_address = LnAddress {
+                                    address: self.name.clone(),
+                                };
 
-                            let ln_address = LnAddress::new(self.name.clone());
+                            //let ln_address = LnAddress::new(self.name.clone());
 
-                              match ln_address {
-                                    Ok(ln_address) => {
+                            //   match ln_address {
+                            //         Ok(ln_address) => {
                                         let zebedee_client = global_state.read().await.zbd.clone();
                                         let is_ln_address_clone = is_ln_address.clone();
 
@@ -146,11 +146,11 @@ impl Player {
                                                 }
                                             }
                                         });
-                                    }
-                                    Err(e) => {
-                                        error!("{:?}", e);
-                                    }
-                              }
+                                    // }
+                                    // Err(e) => {
+                                    //     error!("{:?}", e);
+                                    // }
+                            //   }
 
 
                     let player_connected = PlayerConnected::new(self.id, self.name.clone());
@@ -166,12 +166,12 @@ impl Player {
                         .map(|(_, value)| value.clone())
                         .collect::<Vec<_>>();
 
-                    for send_player in players {
-                     if let Err(disconnected) = send_player.tx.send(player_connect_msg.clone()) {
-                          error!("Failed to send ScoreUpdate: {}", disconnected);
-                        }
+                                for send_player in players {
+                                 if let Err(disconnected) = send_player.tx.send(player_connect_msg.clone()) {
+                                    error!("Failed to send ScoreUpdate: {}", disconnected);
+                                     }
 
-                         }
+                                    }
 
                             }
                             Ok(ClientMessage::PlayerInput(input)) => {
