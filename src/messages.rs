@@ -86,11 +86,11 @@ pub struct PlayerInfo {
     pub pos: Option<f32>,
     pub target: [f32; 2],
     pub score: usize,
-    pub name: String,
+    pub name: Option<String>,
 }
 
 impl PlayerInfo {
-    pub fn new(pos: Option<f32>, target: [f32; 2], score: usize, name: String) -> Self {
+    pub fn new(pos: Option<f32>, target: [f32; 2], score: usize, name: Option<String>) -> Self {
         Self {
             pos,
             target,

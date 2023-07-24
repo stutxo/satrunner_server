@@ -40,7 +40,7 @@ pub struct GlobalPlayer {
     pub pos: Option<f32>,
     pub target: [f32; 2],
     pub score: usize,
-    pub name: String,
+    pub name: Option<String>,
 }
 
 impl GlobalPlayer {
@@ -50,7 +50,7 @@ impl GlobalPlayer {
             pos: None,
             target: [0., 0.],
             score: 0,
-            name: String::new(),
+            name: None,
         }
     }
 }

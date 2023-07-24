@@ -6,7 +6,7 @@ use log::{error, info, warn};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use speedy::Readable;
-use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::sync::{mpsc, RwLock};
 use tokio_stream::{wrappers::UnboundedReceiverStream, StreamExt};
 use uuid::Uuid;
 
@@ -35,6 +35,7 @@ pub struct Player {
     pub adjust_complete: bool,
     pub dots: Vec<Vec3>,
     pub new_game_sent: bool,
+    pub game_start: bool,
 }
 
 impl Player {
@@ -49,8 +50,8 @@ impl Player {
             msg_sent: Vec::new(),
             adjust_complete: true,
             dots: Vec::new(),
-
             new_game_sent: false,
+            game_start: false,
         }
     }
 
@@ -117,36 +118,40 @@ impl Player {
 
                                 self.name = name.clone();
 
-                                let ln_address = LnAddress {
-                                    address: self.name.clone(),
-                                };
+                                // let ln_address = LnAddress {
+                                //     address: self.name.clone(),
+                                // };
 
-                                // let ln_address = LnAddress::new(self.name.clone());
+                            let ln_address = LnAddress::new(self.name.clone());
 
-                                // if let Ok (ln_address) = ln_address {
-                                    let zebedee_client = global_state.read().await.zbd.clone();
-                                    let is_ln_address_clone = is_ln_address.clone();
+                              match ln_address {
+                                    Ok(ln_address) => {
+                                        let zebedee_client = global_state.read().await.zbd.clone();
+                                        let is_ln_address_clone = is_ln_address.clone();
 
-                                    tokio::spawn(async move {
-                                    let mut is_ln_address_clone = is_ln_address_clone.write().await;
-                                        info!("Validating LN address: {}", name);
-                                        let validate_response =
-                                            zebedee_client.validate_ln_address(&ln_address).await;
+                                        tokio::spawn(async move {
+                                        let mut is_ln_address_clone = is_ln_address_clone.write().await;
+                                            info!("Validating LN address: {}", name);
+                                            let validate_response =
+                                                zebedee_client.validate_ln_address(&ln_address).await;
 
-                                        match validate_response {
-                                            Ok(_) => {
-                                                info!("Valid LN address: {}", name);
-                                                *is_ln_address_clone = true;
+                                            match validate_response {
+                                                Ok(_) => {
+                                                    info!("Valid LN address: {}", name);
+                                                    *is_ln_address_clone = true;
 
+                                                }
+                                                Err(e) => {
+                                                    error!("Invalid LN address: {}", e);
+                                                }
                                             }
-                                            Err(e) => {
-                                                error!("Invalid LN address: {}", e);
-                                            }
-                                        }
-                                    });
-                                // } else {
-                                //     error!("Invalid address format: {}", name);
-                                // }
+                                        });
+                                    }
+                                    Err(e) => {
+                                        error!("{:?}", e);
+                                    }
+                              }
+
 
                     let player_connected = PlayerConnected::new(self.id, self.name.clone());
 
@@ -182,6 +187,8 @@ impl Player {
                             error!("other message: {:?}", msg);
                         }
                     }
+
+                    self.game_start = true;
                 }
                 _ = server_tick.changed() => {
 
@@ -191,16 +198,31 @@ impl Player {
                         let mut player_positions: HashMap<Uuid, PlayerInfo> = HashMap::new();
 
                          for (&uuid, player_state) in global_state.read().await.players.iter() {
+
+
+                        if let Some(name) = &player_state.name {
                         let player = PlayerInfo::new(
                             player_state.pos,
                             player_state.target,
                             player_state.score,
-                            player_state.name.clone(),
-                        );
+                            Some(name.to_string()));
 
-                        player_positions.insert(uuid, player);
-                            }
+                         player_positions.insert(uuid, player);
 
+                        } else {
+
+                        let player = PlayerInfo::new(
+                            player_state.pos,
+                            player_state.target,
+                            player_state.score,
+                            None,
+                            );
+                            player_positions.insert(uuid, player);
+                            };
+                        }
+
+
+                            info!("sending new game: {:?}", new_tick);
                         if let Err(disconnected) = tx_clone.send(NetworkMessage::NewGame(NewGame::new(
                             self.id,
                         new_tick,
@@ -210,7 +232,10 @@ impl Player {
                         error!("Failed to send NewGame: {}", disconnected);
                         }
                         self.new_game_sent = true;
+
                     }
+
+
 
                         let mut tick_adjustment: i64 = 0;
                         let mut game_update: Option<NetworkMessage> = None;
@@ -296,6 +321,7 @@ impl Player {
                                     && dot.x <= WORLD_BOUNDS
                             });
 
+                            if self.game_start {
                             for i in (0..self.dots.len()).rev() {
                                 let dot = &self.dots[i];
                                 if (dot.x - self.pos.x).abs() < 1.0 && (dot.y - self.pos.y).abs() < 1.0 {
@@ -306,7 +332,7 @@ impl Player {
                                         self.id,
                                         self.score,
                                     ));
-
+                                    info!("score: {:?}", score_update_msg);
 
                                         let zebedee_client = global_state.read().await.zbd.clone();
 
@@ -348,6 +374,7 @@ impl Player {
 
                                 }
                             }
+                        }
 
                             if let Some(game_update_msg) = game_update {
                                 let players = global_state
@@ -365,17 +392,18 @@ impl Player {
                             }
 
 
-
+                if self.game_start {
                     if let Some(player_state) = global_state.write().await.players.get_mut(&self.id) {
                         player_state.pos = Some(self.pos.x);
                         player_state.target = [self.target.x, self.target.y];
                         player_state.score = self.score;
-                        player_state.name = self.name.clone();
+                        player_state.name = Some(self.name.clone());
 
                     }
-
-
+                    }
                 }
+
+
                 _ = cancel_rx.as_mut().get_mut() => {
                     let player_disconnected_msg = NetworkMessage::PlayerDisconnected(self.id);
 
