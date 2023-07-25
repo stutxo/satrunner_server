@@ -179,33 +179,33 @@ impl Player {
             address: self.name.clone(),
         };
 
-        //let ln_address = LnAddress::new(self.name.clone());
+        let valid_email_address = ln_address.validate();
 
-        //   match ln_address {
-        //         Ok(ln_address) => {
-        let zebedee_client = global_state.read().await.zbd.clone();
-        let is_ln_address_clone = is_ln_address.clone();
+        match valid_email_address {
+            Ok(_) => {
+                let zebedee_client = global_state.read().await.zbd.clone();
+                let is_ln_address_clone = is_ln_address.clone();
 
-        tokio::spawn(async move {
-            let mut is_ln_address_clone = is_ln_address_clone.write().await;
-            info!("Validating LN address: {}", name);
-            let validate_response = zebedee_client.validate_ln_address(&ln_address).await;
+                tokio::spawn(async move {
+                    info!("Validating LN address: {}", name);
+                    let validate_response = zebedee_client.validate_ln_address(&ln_address).await;
 
-            match validate_response {
-                Ok(_) => {
-                    info!("Valid LN address: {}", name);
-                    *is_ln_address_clone = true;
-                }
-                Err(e) => {
-                    error!("Invalid LN address: {}", e);
-                }
+                    match validate_response {
+                        Ok(res) => {
+                            info!("Valid LN address: {:?}", res.data);
+                            let mut is_ln_address_clone = is_ln_address_clone.write().await;
+                            *is_ln_address_clone = true;
+                        }
+                        Err(e) => {
+                            error!("Invalid LN address: {}", e);
+                        }
+                    }
+                });
             }
-        });
-        // }
-        // Err(e) => {
-        //     error!("{:?}", e);
-        // }
-        //   }
+            Err(e) => {
+                error!("{:?}", e);
+            }
+        }
 
         let player_connected = PlayerConnected::new(self.id, self.name.clone());
 
