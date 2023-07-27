@@ -21,9 +21,10 @@ use crate::{
     GlobalState,
 };
 
-pub const WORLD_BOUNDS: f32 = 300.0;
-pub const PLAYER_SPEED: f32 = 1.0;
-pub const FALL_SPEED: f32 = 0.5;
+pub const X_BOUNDS: f32 = 1000.0;
+pub const Y_BOUNDS: f32 = 500.0;
+pub const PLAYER_SPEED: f32 = 10.0;
+pub const FALL_SPEED: f32 = 5.0;
 
 pub struct Player {
     pub target: Vec2,
@@ -59,8 +60,8 @@ impl Player {
     pub fn apply_input(&mut self) {
         let movement = self.calculate_movement();
 
-        if (self.pos.x + movement.x).abs() <= WORLD_BOUNDS
-            && (self.pos.y + movement.y).abs() <= WORLD_BOUNDS
+        if (self.pos.x + movement.x).abs() <= X_BOUNDS
+            && (self.pos.y + movement.y).abs() <= Y_BOUNDS
         {
             self.pos += Vec3::new(movement.x, 0.0, 0.0);
         }
@@ -68,7 +69,7 @@ impl Player {
 
     pub fn calculate_movement(&self) -> Vec2 {
         let direction = self.target - Vec2::new(self.pos.x, self.pos.y);
-        let tolerance = 0.5;
+        let tolerance = 5.0;
 
         if direction.length() > tolerance {
             direction.normalize() * PLAYER_SPEED
@@ -352,8 +353,8 @@ impl Player {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
 
         for _ in 1..2 {
-            let x_position: f32 = rng.gen_range(-WORLD_BOUNDS..WORLD_BOUNDS);
-            let y_position: f32 = 25.;
+            let x_position: f32 = rng.gen_range(-X_BOUNDS..X_BOUNDS);
+            let y_position: f32 = Y_BOUNDS;
 
             let dot_start = Vec3::new(x_position, y_position, 0.0);
             self.dots.push(dot_start);
@@ -364,16 +365,13 @@ impl Player {
         }
 
         self.dots.retain(|dot| {
-            dot.y >= -WORLD_BOUNDS
-                && dot.y <= WORLD_BOUNDS
-                && dot.x >= -WORLD_BOUNDS
-                && dot.x <= WORLD_BOUNDS
+            dot.y >= -Y_BOUNDS && dot.y <= Y_BOUNDS && dot.x >= -X_BOUNDS && dot.x <= X_BOUNDS
         });
 
         if self.game_start {
             for i in (0..self.dots.len()).rev() {
                 let dot = &self.dots[i];
-                if (dot.x - self.pos.x).abs() < 1.0 && (dot.y - self.pos.y).abs() < 1.0 {
+                if (dot.x - self.pos.x).abs() < 10.0 && (dot.y - self.pos.y).abs() < 10.0 {
                     self.score += 1;
                     self.dots.remove(i);
 
