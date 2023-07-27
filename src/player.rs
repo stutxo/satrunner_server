@@ -361,7 +361,7 @@ impl Player {
         }
 
         for dot in self.dots.iter_mut() {
-            dot.y += FALL_SPEED * -1.0;
+            dot.y += FALL_SPEED * -0.5
         }
 
         self.dots.retain(|dot| {
@@ -371,7 +371,7 @@ impl Player {
         if self.game_start {
             for i in (0..self.dots.len()).rev() {
                 let dot = &self.dots[i];
-                if (dot.x - self.pos.x).abs() < 10.0 && (dot.y - self.pos.y).abs() < 10.0 {
+                if (dot.x - self.pos.x).abs() < 4.0 && (dot.y - self.pos.y).abs() < 4.0 {
                     self.score += 1;
                     self.dots.remove(i);
 
