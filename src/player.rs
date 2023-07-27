@@ -44,7 +44,7 @@ impl Player {
     pub fn new(id: Uuid) -> Self {
         Self {
             target: Vec2::ZERO,
-            pos: Vec3::new(0.0, -250.0, 0.0),
+            pos: Vec3::new(0.0, -150.0, 0.0),
             id,
             score: 0,
             name: String::new(),
