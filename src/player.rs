@@ -23,7 +23,7 @@ use crate::{
 
 pub const X_BOUNDS: f32 = 1000.0;
 pub const Y_BOUNDS: f32 = 500.0;
-pub const PLAYER_SPEED: f32 = 10.0;
+pub const PLAYER_SPEED: f32 = 5.0;
 pub const FALL_SPEED: f32 = 5.0;
 
 pub struct Player {
