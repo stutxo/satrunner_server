@@ -44,7 +44,7 @@ impl Player {
     pub fn new(id: Uuid) -> Self {
         Self {
             target: Vec2::ZERO,
-            pos: Vec3::new(0.0, -50.0, 0.0),
+            pos: Vec3::new(0.0, -250.0, 0.0),
             id,
             score: 0,
             name: String::new(),
@@ -69,7 +69,7 @@ impl Player {
 
     pub fn calculate_movement(&self) -> Vec2 {
         let direction = self.target - Vec2::new(self.pos.x, self.pos.y);
-        let tolerance = 5.0;
+        let tolerance = 6.0;
 
         if direction.length() > tolerance {
             direction.normalize() * PLAYER_SPEED
