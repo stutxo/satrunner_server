@@ -35,9 +35,10 @@ pub struct Player {
     pub adjusment_iteration: u64,
     pub msg_sent: Vec<u64>,
     pub adjust_complete: bool,
-    pub dots: Vec<Vec3>,
+    pub rain: Vec<Vec3>,
     pub new_game_sent: bool,
     pub game_start: bool,
+    pub bolt: Vec<Vec3>,
 }
 
 impl Player {
@@ -51,9 +52,10 @@ impl Player {
             adjusment_iteration: 0,
             msg_sent: Vec::new(),
             adjust_complete: true,
-            dots: Vec::new(),
+            rain: Vec::new(),
             new_game_sent: false,
             game_start: false,
+            bolt: Vec::new(),
         }
     }
 
@@ -136,7 +138,7 @@ impl Player {
                     }
                     self.process_inputs(&mut inputs, new_tick, global_state.clone()).await;
                     self.apply_input();
-                    self.dots(new_tick, global_state.clone(), is_ln_address.clone()).await;
+                    self.objects(new_tick, global_state.clone(), is_ln_address.clone()).await;
 
                     if self.game_start {
                         if let Some(player_state) = global_state.write().await.players.get_mut(&self.id) {
@@ -343,7 +345,7 @@ impl Player {
         }
     }
 
-    async fn dots(
+    async fn objects(
         &mut self,
         new_tick: u64,
         global_state: Arc<RwLock<GlobalState>>,
@@ -352,28 +354,39 @@ impl Player {
         let seed = global_state.read().await.rng_seed ^ new_tick;
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
 
-        for _ in 1..2 {
-            let x_position: f32 = rng.gen_range(-X_BOUNDS..X_BOUNDS);
-            let y_position: f32 = Y_BOUNDS;
+        let x_position: f32 = rng.gen_range(-X_BOUNDS..X_BOUNDS);
+        let y_position: f32 = Y_BOUNDS;
 
-            let dot_start = Vec3::new(x_position, y_position, 0.0);
-            self.dots.push(dot_start);
+        if new_tick % 10 != 0 {
+            let pos_start = Vec3::new(x_position, y_position, 0.0);
+            self.rain.push(pos_start);
+        } else {
+            let pos_start = Vec3::new(x_position, y_position, 0.0);
+            self.bolt.push(pos_start);
         }
 
-        for dot in self.dots.iter_mut() {
-            dot.y += FALL_SPEED * -0.5
+        for pos in self.rain.iter_mut() {
+            pos.y += FALL_SPEED * -0.5
         }
 
-        self.dots.retain(|dot| {
-            dot.y >= -Y_BOUNDS && dot.y <= Y_BOUNDS && dot.x >= -X_BOUNDS && dot.x <= X_BOUNDS
+        self.rain.retain(|pos| {
+            pos.y >= -Y_BOUNDS && pos.y <= Y_BOUNDS && pos.x >= -X_BOUNDS && pos.x <= X_BOUNDS
+        });
+
+        for pos in self.bolt.iter_mut() {
+            pos.y += FALL_SPEED * -0.5
+        }
+
+        self.bolt.retain(|pos| {
+            pos.y >= -Y_BOUNDS && pos.y <= Y_BOUNDS && pos.x >= -X_BOUNDS && pos.x <= X_BOUNDS
         });
 
         if self.game_start {
-            for i in (0..self.dots.len()).rev() {
-                let dot = &self.dots[i];
-                if (dot.x - self.pos.x).abs() < 4.0 && (dot.y - self.pos.y).abs() < 4.0 {
+            for i in (0..self.bolt.len()).rev() {
+                let pos = &self.bolt[i];
+                if (pos.x - self.pos.x).abs() < 10.0 && (pos.y - self.pos.y).abs() < 10.0 {
                     self.score += 1;
-                    self.dots.remove(i);
+                    self.bolt.remove(i);
 
                     let score_update_msg =
                         NetworkMessage::ScoreUpdate(Score::new(self.id, self.score));
