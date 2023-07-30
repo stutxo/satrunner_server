@@ -38,15 +38,15 @@ pub async fn new_websocket(ws: WebSocket, global_state: Arc<RwLock<GlobalState>>
             .insert(client_id, player_state);
     }
 
-    let (cancel_tx, cancel_rx) = oneshot::channel();
-    let cancel_rx = cancel_rx.fuse();
+    let (cancel_tx, cancel_rx) = mpsc::channel::<()>(1);
+    let mut cancel_tx_clone = cancel_tx.clone();
 
     let global_state_clone = Arc::clone(&global_state);
 
     tokio::task::spawn(async move {
         let mut player = Player::new(client_id);
         player
-            .handle_player(cancel_rx, global_state, tx_clone, &mut input_rx)
+            .handle_player(cancel_rx, global_state, tx_clone, &mut input_rx, cancel_tx)
             .await;
     });
 
@@ -98,5 +98,7 @@ pub async fn new_websocket(ws: WebSocket, global_state: Arc<RwLock<GlobalState>>
     global_state_clone.write().await.players.remove(&client_id);
     info!("player disconnected: {}", client_id);
 
-    cancel_tx.send(()).unwrap();
+    if let Ok(cancel) = cancel_tx_clone.send(()).await {
+        info!("disconnect player: {:?}", cancel);
+    }
 }

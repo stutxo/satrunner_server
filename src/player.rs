@@ -6,7 +6,10 @@ use log::{error, info, warn};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use speedy::Readable;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{
+    mpsc::{self, Receiver, Sender},
+    RwLock,
+};
 use tokio_stream::{wrappers::UnboundedReceiverStream, StreamExt};
 use uuid::Uuid;
 
@@ -99,15 +102,15 @@ impl Player {
 
     pub async fn handle_player(
         &mut self,
-        cancel_rx: futures_util::future::Fuse<tokio::sync::oneshot::Receiver<()>>,
+        mut cancel_rx: Receiver<()>,
         global_state: Arc<RwLock<GlobalState>>,
         tx_clone: mpsc::UnboundedSender<NetworkMessage>,
         input_rx: &mut UnboundedReceiverStream<Message>,
+        cancel_tx: Sender<()>,
     ) {
         let mut inputs = Vec::new();
         let mut server_tick = global_state.read().await.server_tick.clone();
         let is_ln_address = Arc::new(RwLock::new(false));
-        pin_mut!(cancel_rx);
 
         loop {
             tokio::select! {
@@ -138,7 +141,7 @@ impl Player {
                     }
                     self.process_inputs(&mut inputs, new_tick, global_state.clone()).await;
                     self.apply_input();
-                    self.objects(new_tick, global_state.clone(), is_ln_address.clone()).await;
+                    self.objects(new_tick, global_state.clone(), is_ln_address.clone(), tx_clone.clone(), cancel_tx.clone()).await;
 
                     if self.game_start {
                         if let Some(player_state) = global_state.write().await.players.get_mut(&self.id) {
@@ -150,7 +153,7 @@ impl Player {
                     }
 
                 }
-                _ = cancel_rx.as_mut().get_mut()  => {
+                _ = cancel_rx.recv()  => {
                     let player_disconnected_msg = NetworkMessage::PlayerDisconnected(self.id);
                     let players = global_state.read().await
                         .players
@@ -350,6 +353,8 @@ impl Player {
         new_tick: u64,
         global_state: Arc<RwLock<GlobalState>>,
         is_ln_address: Arc<RwLock<bool>>,
+        tx_clone: mpsc::UnboundedSender<NetworkMessage>,
+        cancel_tx: Sender<()>,
     ) {
         let seed = global_state.read().await.rng_seed ^ new_tick;
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
@@ -428,6 +433,22 @@ impl Player {
                             error!("Failed to send ScoreUpdate: {}", disconnected);
                         }
                     }
+                }
+            }
+
+            for i in (0..self.rain.len()).rev() {
+                let pos = &self.rain[i];
+                if (pos.x - self.pos.x).abs() < 10.0 && (pos.y - self.pos.y).abs() < 10.0 {
+                    self.rain.remove(i);
+
+                    if let Err(disconnected) = tx_clone.send(NetworkMessage::DamagePlayer(self.id))
+                    {
+                        error!("Failed to send DamagePlayer: {}", disconnected);
+                    }
+
+                    global_state.write().await.players.remove(&self.id);
+                    info!("player disconnected: {}", self.id);
+                    cancel_tx.send(()).await.unwrap();
                 }
             }
         }

@@ -12,6 +12,7 @@ pub enum NetworkMessage {
     PlayerConnected(PlayerConnected),
     PlayerDisconnected(Uuid),
     Ping,
+    DamagePlayer(Uuid),
 }
 
 #[derive(Readable, Writable, Debug, Clone)]
