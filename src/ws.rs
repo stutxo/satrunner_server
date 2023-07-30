@@ -1,10 +1,10 @@
 use std::{sync::Arc, time::Duration};
 
-use futures_util::{FutureExt, SinkExt, StreamExt};
+use futures_util::{SinkExt, StreamExt};
 
 use log::{error, info};
 use speedy::Writable;
-use tokio::sync::{mpsc, oneshot, RwLock};
+use tokio::sync::{mpsc, RwLock};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use uuid::Uuid;
 use warp::ws::{Message, WebSocket};
@@ -39,14 +39,13 @@ pub async fn new_websocket(ws: WebSocket, global_state: Arc<RwLock<GlobalState>>
     }
 
     let (cancel_tx, cancel_rx) = mpsc::channel::<()>(1);
-    let mut cancel_tx_clone = cancel_tx.clone();
 
     let global_state_clone = Arc::clone(&global_state);
 
     tokio::task::spawn(async move {
         let mut player = Player::new(client_id);
         player
-            .handle_player(cancel_rx, global_state, tx_clone, &mut input_rx, cancel_tx)
+            .handle_player(cancel_rx, global_state, tx_clone, &mut input_rx)
             .await;
     });
 
@@ -98,7 +97,7 @@ pub async fn new_websocket(ws: WebSocket, global_state: Arc<RwLock<GlobalState>>
     global_state_clone.write().await.players.remove(&client_id);
     info!("player disconnected: {}", client_id);
 
-    if let Ok(cancel) = cancel_tx_clone.send(()).await {
+    if let Ok(cancel) = cancel_tx.send(()).await {
         info!("disconnect player: {:?}", cancel);
     }
 }

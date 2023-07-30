@@ -6,7 +6,7 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use speedy::Readable;
 use tokio::sync::{
-    mpsc::{self, Receiver, Sender},
+    mpsc::{self, Receiver},
     RwLock,
 };
 use tokio_stream::{wrappers::UnboundedReceiverStream, StreamExt};
@@ -111,7 +111,6 @@ impl Player {
         global_state: Arc<RwLock<GlobalState>>,
         tx_clone: mpsc::UnboundedSender<NetworkMessage>,
         input_rx: &mut UnboundedReceiverStream<Message>,
-        cancel_tx: Sender<()>,
     ) {
         let mut inputs = Vec::new();
         let mut server_tick = global_state.read().await.server_tick.clone();
@@ -146,7 +145,7 @@ impl Player {
                     }
                     self.process_inputs(&mut inputs, new_tick, global_state.clone()).await;
                     self.apply_input();
-                    self.objects(new_tick, global_state.clone(), is_ln_address.clone(), tx_clone.clone(), cancel_tx.clone()).await;
+                    self.objects(new_tick, global_state.clone(), is_ln_address.clone()).await;
 
                     if self.game_start {
                         if let Some(player_state) = global_state.write().await.players.get_mut(&self.id) {
@@ -358,8 +357,6 @@ impl Player {
         new_tick: u64,
         global_state: Arc<RwLock<GlobalState>>,
         is_ln_address: Arc<RwLock<bool>>,
-        tx_clone: mpsc::UnboundedSender<NetworkMessage>,
-        cancel_tx: Sender<()>,
     ) {
         let seed = global_state.read().await.rng_seed ^ new_tick;
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
@@ -465,8 +462,13 @@ impl Player {
                 {
                     let tick: u64 = object.tick;
                     self.rain.remove(i);
+                    self.game_start = false;
+                    self.score = 0;
+                    self.target = Vec2::ZERO;
+                    self.pos = Vec3::new(0.0, -150.0, 0.0);
 
-                    let score_update_msg = NetworkMessage::DamagePlayer(Damage::new(self.id, tick));
+                    let damage_update_msg =
+                        NetworkMessage::DamagePlayer(Damage::new(self.id, tick));
 
                     let players = global_state
                         .read()
@@ -476,14 +478,10 @@ impl Player {
                         .cloned()
                         .collect::<Vec<_>>();
                     for send_player in players {
-                        if let Err(disconnected) = send_player.tx.send(score_update_msg.clone()) {
+                        if let Err(disconnected) = send_player.tx.send(damage_update_msg.clone()) {
                             error!("Failed to send ScoreUpdate: {}", disconnected);
                         }
                     }
-
-                    global_state.write().await.players.remove(&self.id);
-                    info!("player disconnected: {}", self.id);
-                    cancel_tx.send(()).await.unwrap();
                 }
             }
         }
