@@ -482,6 +482,22 @@ impl Player {
                             error!("Failed to send ScoreUpdate: {}", disconnected);
                         }
                     }
+
+                    let player_disconnected_msg = NetworkMessage::PlayerDisconnected(self.id);
+                    let players = global_state
+                        .read()
+                        .await
+                        .players
+                        .values()
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    for send_player in players {
+                        if let Err(disconnected) =
+                            send_player.tx.send(player_disconnected_msg.clone())
+                        {
+                            error!("Failed to send ScoreUpdate: {}", disconnected);
+                        }
+                    }
                 }
             }
         }
