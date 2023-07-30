@@ -1,6 +1,5 @@
 use std::{collections::HashMap, sync::Arc};
 
-use futures_util::pin_mut;
 use glam::{Vec2, Vec3};
 use log::{error, info, warn};
 use rand::{Rng, SeedableRng};
@@ -18,8 +17,8 @@ use zebedee_rust::ln_address::{LnAddress, LnPayment};
 
 use crate::{
     messages::{
-        ClientMessage, NetworkMessage, NewGame, NewPos, PlayerConnected, PlayerInfo, PlayerInput,
-        Score,
+        ClientMessage, Damage, NetworkMessage, NewGame, NewPos, PlayerConnected, PlayerInfo,
+        PlayerInput, Score,
     },
     GlobalState,
 };
@@ -28,6 +27,12 @@ pub const X_BOUNDS: f32 = 1000.0;
 pub const Y_BOUNDS: f32 = 500.0;
 pub const PLAYER_SPEED: f32 = 5.0;
 pub const FALL_SPEED: f32 = 5.0;
+
+#[derive(Debug)]
+pub struct ObjectPos {
+    pub tick: u64,
+    pub pos: Vec3,
+}
 
 pub struct Player {
     pub target: Vec2,
@@ -38,10 +43,10 @@ pub struct Player {
     pub adjusment_iteration: u64,
     pub msg_sent: Vec<u64>,
     pub adjust_complete: bool,
-    pub rain: Vec<Vec3>,
+    pub rain: Vec<ObjectPos>,
     pub new_game_sent: bool,
     pub game_start: bool,
-    pub bolt: Vec<Vec3>,
+    pub bolt: Vec<ObjectPos>,
 }
 
 impl Player {
@@ -364,37 +369,54 @@ impl Player {
 
         if new_tick % 10 != 0 {
             let pos_start = Vec3::new(x_position, y_position, 0.0);
-            self.rain.push(pos_start);
+            let new_pos = ObjectPos {
+                tick: new_tick,
+                pos: pos_start,
+            };
+            self.rain.push(new_pos);
         } else {
             let pos_start = Vec3::new(x_position, y_position, 0.0);
-            self.bolt.push(pos_start);
+            let new_pos = ObjectPos {
+                tick: new_tick,
+                pos: pos_start,
+            };
+            self.bolt.push(new_pos);
         }
 
-        for pos in self.rain.iter_mut() {
-            pos.y += FALL_SPEED * -0.5
+        for object in self.rain.iter_mut() {
+            object.pos.y += FALL_SPEED * -0.5
         }
 
-        self.rain.retain(|pos| {
-            pos.y >= -Y_BOUNDS && pos.y <= Y_BOUNDS && pos.x >= -X_BOUNDS && pos.x <= X_BOUNDS
+        self.rain.retain(|object| {
+            object.pos.y >= -Y_BOUNDS
+                && object.pos.y <= Y_BOUNDS
+                && object.pos.x >= -X_BOUNDS
+                && object.pos.x <= X_BOUNDS
         });
 
-        for pos in self.bolt.iter_mut() {
-            pos.y += FALL_SPEED * -0.5
+        for object in self.bolt.iter_mut() {
+            object.pos.y += FALL_SPEED * -0.5
         }
 
-        self.bolt.retain(|pos| {
-            pos.y >= -Y_BOUNDS && pos.y <= Y_BOUNDS && pos.x >= -X_BOUNDS && pos.x <= X_BOUNDS
+        self.bolt.retain(|object: &ObjectPos| {
+            object.pos.y >= -Y_BOUNDS
+                && object.pos.y <= Y_BOUNDS
+                && object.pos.x >= -X_BOUNDS
+                && object.pos.x <= X_BOUNDS
         });
 
         if self.game_start {
             for i in (0..self.bolt.len()).rev() {
-                let pos = &self.bolt[i];
-                if (pos.x - self.pos.x).abs() < 10.0 && (pos.y - self.pos.y).abs() < 10.0 {
+                let object = &self.bolt[i];
+                if (object.pos.x - self.pos.x).abs() < 10.0
+                    && (object.pos.y - self.pos.y).abs() < 10.0
+                {
+                    let tick = object.tick;
                     self.score += 1;
                     self.bolt.remove(i);
 
                     let score_update_msg =
-                        NetworkMessage::ScoreUpdate(Score::new(self.id, self.score));
+                        NetworkMessage::ScoreUpdate(Score::new(self.id, self.score, tick));
                     info!("score: {:?}", score_update_msg);
 
                     let zebedee_client = global_state.read().await.zbd.clone();
@@ -437,13 +459,26 @@ impl Player {
             }
 
             for i in (0..self.rain.len()).rev() {
-                let pos = &self.rain[i];
-                if (pos.x - self.pos.x).abs() < 10.0 && (pos.y - self.pos.y).abs() < 10.0 {
+                let object = &self.rain[i];
+                if (object.pos.x - self.pos.x).abs() < 10.0
+                    && (object.pos.y - self.pos.y).abs() < 10.0
+                {
+                    let tick: u64 = object.tick;
                     self.rain.remove(i);
 
-                    if let Err(disconnected) = tx_clone.send(NetworkMessage::DamagePlayer(self.id))
-                    {
-                        error!("Failed to send DamagePlayer: {}", disconnected);
+                    let score_update_msg = NetworkMessage::DamagePlayer(Damage::new(self.id, tick));
+
+                    let players = global_state
+                        .read()
+                        .await
+                        .players
+                        .values()
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    for send_player in players {
+                        if let Err(disconnected) = send_player.tx.send(score_update_msg.clone()) {
+                            error!("Failed to send ScoreUpdate: {}", disconnected);
+                        }
                     }
 
                     global_state.write().await.players.remove(&self.id);

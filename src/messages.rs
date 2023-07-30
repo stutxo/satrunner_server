@@ -12,7 +12,7 @@ pub enum NetworkMessage {
     PlayerConnected(PlayerConnected),
     PlayerDisconnected(Uuid),
     Ping,
-    DamagePlayer(Uuid),
+    DamagePlayer(Damage),
 }
 
 #[derive(Readable, Writable, Debug, Clone)]
@@ -105,11 +105,12 @@ impl PlayerInfo {
 pub struct Score {
     pub id: Uuid,
     pub score: usize,
+    pub tick: u64,
 }
 
 impl Score {
-    pub fn new(id: Uuid, score: usize) -> Self {
-        Self { id, score }
+    pub fn new(id: Uuid, score: usize, tick: u64) -> Self {
+        Self { id, score, tick }
     }
 }
 
@@ -122,5 +123,17 @@ pub struct PlayerConnected {
 impl PlayerConnected {
     pub fn new(id: Uuid, name: String) -> Self {
         Self { id, name }
+    }
+}
+
+#[derive(Readable, Writable, Debug, Clone)]
+pub struct Damage {
+    pub id: Uuid,
+    pub tick: u64,
+}
+
+impl Damage {
+    pub fn new(id: Uuid, tick: u64) -> Self {
+        Self { id, tick }
     }
 }
