@@ -88,15 +88,23 @@ pub struct PlayerInfo {
     pub target: [f32; 2],
     pub score: usize,
     pub name: Option<String>,
+    pub alive: bool,
 }
 
 impl PlayerInfo {
-    pub fn new(pos: Option<f32>, target: [f32; 2], score: usize, name: Option<String>) -> Self {
+    pub fn new(
+        pos: Option<f32>,
+        target: [f32; 2],
+        score: usize,
+        name: Option<String>,
+        alive: bool,
+    ) -> Self {
         Self {
             pos,
             target,
             score,
             name,
+            alive,
         }
     }
 }

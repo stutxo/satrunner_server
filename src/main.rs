@@ -41,6 +41,7 @@ pub struct GlobalPlayer {
     pub target: [f32; 2],
     pub score: usize,
     pub name: Option<String>,
+    pub alive: bool,
 }
 
 impl GlobalPlayer {
@@ -51,6 +52,7 @@ impl GlobalPlayer {
             target: [0., 0.],
             score: 0,
             name: None,
+            alive: true,
         }
     }
 }

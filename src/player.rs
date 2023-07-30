@@ -252,6 +252,7 @@ impl Player {
                     player_state.target,
                     player_state.score,
                     Some(name.to_string()),
+                    player_state.alive,
                 );
 
                 player_positions.insert(uuid, player);
@@ -261,6 +262,7 @@ impl Player {
                     player_state.target,
                     player_state.score,
                     None,
+                    player_state.alive,
                 );
                 player_positions.insert(uuid, player);
             };
@@ -466,6 +468,10 @@ impl Player {
                     self.score = 0;
                     self.target = Vec2::ZERO;
                     self.pos = Vec3::new(0.0, -150.0, 0.0);
+
+                    if let Some(player) = global_state.write().await.players.get_mut(&self.id) {
+                        player.alive = false;
+                    }
 
                     let damage_update_msg =
                         NetworkMessage::DamagePlayer(Damage::new(self.id, tick));
