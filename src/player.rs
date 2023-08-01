@@ -47,7 +47,7 @@ pub struct Player {
     pub new_game_sent: bool,
     pub game_start: bool,
     pub bolt: Vec<ObjectPos>,
-    pub spawn_time: Instant,
+    pub spawn_time: Option<Instant>,
 }
 
 impl Player {
@@ -65,7 +65,7 @@ impl Player {
             new_game_sent: false,
             game_start: false,
             bolt: Vec::new(),
-            spawn_time: Instant::now(),
+            spawn_time: None,
         }
     }
 
@@ -188,7 +188,7 @@ impl Player {
         info!("Player {} connected", name);
 
         self.name = name.clone();
-        self.spawn_time = Instant::now();
+        self.spawn_time = Some(Instant::now());
 
         let ln_address = LnAddress {
             address: self.name.clone(),
@@ -412,7 +412,7 @@ impl Player {
 
         if self.game_start {
             if self.score == 21 {
-                let secs_alive = Instant::now() - self.spawn_time;
+                let secs_alive = Instant::now() - self.spawn_time.unwrap();
                 let seconds = secs_alive.as_secs();
                 self.game_start = false;
                 self.score = 0;
@@ -500,7 +500,7 @@ impl Player {
                     && (object.pos.y - self.pos.y).abs() < 10.0
                 {
                     let tick: u64 = object.tick;
-                    let secs_alive = Instant::now() - self.spawn_time;
+                    let secs_alive = Instant::now() - self.spawn_time.unwrap();
                     let seconds = secs_alive.as_secs();
                     self.rain.remove(i);
                     self.game_start = false;
