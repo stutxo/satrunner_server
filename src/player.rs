@@ -426,6 +426,30 @@ impl Player {
                     error!("Failed to send NewGame: {}", disconnected);
                 }
 
+                let zebedee_client = global_state.read().await.zbd.clone();
+
+                let is_ln_address = is_ln_address.read().await;
+
+                if *is_ln_address {
+                    let payment = LnPayment {
+                        ln_address: self.name.clone(),
+                        amount: String::from("21000"),
+                        ..Default::default()
+                    };
+
+                    tokio::spawn(async move {
+                        let payment_response = zebedee_client.pay_ln_address(&payment).await;
+
+                        match payment_response {
+                            Ok(response) => info!(
+                                "Payment sent to {:?}: {:?}",
+                                payment.ln_address, response.data
+                            ),
+                            Err(e) => info!("Payment failed {:?}", e),
+                        }
+                    });
+                }
+
                 let player_disconnected_msg = NetworkMessage::PlayerDisconnected(self.id);
                 let players = global_state
                     .read()
@@ -454,30 +478,6 @@ impl Player {
                     let score_update_msg =
                         NetworkMessage::ScoreUpdate(Score::new(self.id, self.score, tick));
                     info!("score: {:?}", score_update_msg);
-
-                    let zebedee_client = global_state.read().await.zbd.clone();
-
-                    let is_ln_address = is_ln_address.read().await;
-
-                    if *is_ln_address {
-                        let payment = LnPayment {
-                            ln_address: self.name.clone(),
-                            amount: String::from("1000"),
-                            ..Default::default()
-                        };
-
-                        tokio::spawn(async move {
-                            let payment_response = zebedee_client.pay_ln_address(&payment).await;
-
-                            match payment_response {
-                                Ok(response) => info!(
-                                    "Payment sent to {:?}: {:?}",
-                                    payment.ln_address, response.data
-                                ),
-                                Err(e) => info!("Payment failed {:?}", e),
-                            }
-                        });
-                    }
 
                     let players = global_state
                         .read()
