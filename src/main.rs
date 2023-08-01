@@ -1,3 +1,4 @@
+use log::info;
 use rand::Rng;
 use serde_json::Value;
 use std::{collections::HashMap, env, sync::Arc};
@@ -15,21 +16,28 @@ use messages::*;
 use server_loop::*;
 use ws::*;
 
-#[derive(Debug)]
 pub struct GlobalState {
     pub players: HashMap<Uuid, GlobalPlayer>,
     pub rng_seed: u64,
     pub zbd: ZebedeeClient,
     pub server_tick: Receiver<u64>,
+    pub redis: redis::Connection,
 }
 
 impl GlobalState {
     fn new(rng_seed: u64, zbd: ZebedeeClient, server_tick: Receiver<u64>) -> Self {
+        // let client = redis::Client::open("redis://127.0.0.1/").unwrap();
+        let client = redis::Client::open(
+            "redis://clustercfg.rainrun.bd7hwg.memorydb.eu-west-2.amazonaws.com:6379",
+        )
+        .unwrap();
+        info!("Connected to Redis {:?}", client);
         Self {
             players: HashMap::new(),
             rng_seed,
             zbd,
             server_tick,
+            redis: client.get_connection().unwrap(),
         }
     }
 }
@@ -65,7 +73,8 @@ async fn main() {
     let value: Value = serde_json::from_str(&api_key_json).unwrap();
     let api_key = value["ZBD_API_KEY"].as_str().unwrap().to_string();
     let zebedee_client = ZebedeeClient::new().apikey(api_key).build();
-    //let zebedee_client = ZebedeeClient::new().apikey("test".to_string()).build();
+
+    // let zebedee_client = ZebedeeClient::new().apikey("test".to_string()).build();
 
     let rng_seed = rand::thread_rng().gen::<u64>();
 

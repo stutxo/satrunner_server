@@ -19,6 +19,7 @@ speedy = {version = "0.8.6", features = ["uuid"]}
 # zebedee-rust = "0.4.4"
 zebedee-rust = { git = "https://github.com/stum0/zebedee-rust.git", branch = "patch-1" }
 serde_json = "1.0.103"
+redis = "0.23.0"
 
 
 [dependencies.uuid]

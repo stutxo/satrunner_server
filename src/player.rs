@@ -4,6 +4,7 @@ use glam::{Vec2, Vec3};
 use log::{error, info, warn};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
+use redis::Commands;
 use speedy::Readable;
 use tokio::sync::{
     mpsc::{self, Receiver},
@@ -273,15 +274,29 @@ impl Player {
             };
         }
 
+        let mut high_scores: Vec<(String, u64)> = Vec::new();
+
+        {
+            let mut state = global_state.write().await;
+            let redis_client = &mut state.redis;
+            high_scores = redis_client
+                .zrange_withscores("high_scores", 0, 4)
+                .unwrap_or(Vec::new());
+        }
+
+        let rng_seed = global_state.read().await.rng_seed;
+
         info!("sending new game: {:?}", new_tick);
         if let Err(disconnected) = tx_clone.send(NetworkMessage::NewGame(NewGame::new(
             self.id,
             new_tick,
-            global_state.read().await.rng_seed,
+            rng_seed,
             player_positions,
+            high_scores,
         ))) {
             error!("Failed to send NewGame: {}", disconnected);
         }
+
         self.new_game_sent = true;
     }
 
@@ -419,8 +434,30 @@ impl Player {
                 self.target = Vec2::ZERO;
                 self.pos = Vec3::new(0.0, -150.0, 0.0);
 
-                let damage_update_msg =
-                    NetworkMessage::DamagePlayer(Damage::new(self.id, None, seconds, true));
+                let mut high_scores: Vec<(String, u64)> = Vec::new();
+
+                {
+                    let mut state = global_state.write().await;
+                    let redis_client = &mut state.redis;
+                    let current_score: Option<f64> =
+                        redis_client.zscore("high_scores", &self.name).unwrap();
+                    if current_score.map_or(true, |cs| cs > seconds as f64) {
+                        let _: () = redis_client
+                            .zadd("high_scores", &self.name, seconds)
+                            .unwrap();
+                    }
+                    high_scores = redis_client
+                        .zrange_withscores("high_scores", 0, 4)
+                        .unwrap_or(Vec::new());
+                }
+
+                let damage_update_msg = NetworkMessage::DamagePlayer(Damage::new(
+                    self.id,
+                    None,
+                    seconds,
+                    true,
+                    Some(high_scores),
+                ));
 
                 if let Err(disconnected) = tx_clone.send(damage_update_msg) {
                     error!("Failed to send NewGame: {}", disconnected);
@@ -517,6 +554,7 @@ impl Player {
                         Some(tick),
                         seconds,
                         false,
+                        None,
                     ));
 
                     let players = global_state

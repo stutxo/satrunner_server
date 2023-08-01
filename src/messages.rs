@@ -64,6 +64,7 @@ pub struct NewGame {
     pub server_tick: u64,
     pub rng_seed: u64,
     pub player_positions: HashMap<Uuid, PlayerInfo>,
+    pub high_scores: Vec<(String, u64)>,
 }
 
 impl NewGame {
@@ -72,12 +73,14 @@ impl NewGame {
         server_tick: u64,
         rng_seed: u64,
         player_positions: HashMap<Uuid, PlayerInfo>,
+        high_scores: Vec<(String, u64)>,
     ) -> Self {
         Self {
             id,
             server_tick,
             rng_seed,
             player_positions,
+            high_scores,
         }
     }
 }
@@ -140,15 +143,23 @@ pub struct Damage {
     pub tick: Option<u64>,
     pub secs_alive: u64,
     pub win: bool,
+    pub high_scores: Option<Vec<(String, u64)>>,
 }
 
 impl Damage {
-    pub fn new(id: Uuid, tick: Option<u64>, secs_alive: u64, win: bool) -> Self {
+    pub fn new(
+        id: Uuid,
+        tick: Option<u64>,
+        secs_alive: u64,
+        win: bool,
+        high_scores: Option<Vec<(String, u64)>>,
+    ) -> Self {
         Self {
             id,
             tick,
             secs_alive,
             win,
+            high_scores,
         }
     }
 }
