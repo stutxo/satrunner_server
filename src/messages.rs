@@ -137,11 +137,18 @@ impl PlayerConnected {
 #[derive(Readable, Writable, Debug, Clone)]
 pub struct Damage {
     pub id: Uuid,
-    pub tick: u64,
+    pub tick: Option<u64>,
+    pub secs_alive: u64,
+    pub win: bool,
 }
 
 impl Damage {
-    pub fn new(id: Uuid, tick: u64) -> Self {
-        Self { id, tick }
+    pub fn new(id: Uuid, tick: Option<u64>, secs_alive: u64, win: bool) -> Self {
+        Self {
+            id,
+            tick,
+            secs_alive,
+            win,
+        }
     }
 }

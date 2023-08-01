@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use glam::{Vec2, Vec3};
 use log::{error, info, warn};
@@ -47,6 +47,7 @@ pub struct Player {
     pub new_game_sent: bool,
     pub game_start: bool,
     pub bolt: Vec<ObjectPos>,
+    pub spawn_time: Instant,
 }
 
 impl Player {
@@ -64,6 +65,7 @@ impl Player {
             new_game_sent: false,
             game_start: false,
             bolt: Vec::new(),
+            spawn_time: Instant::now(),
         }
     }
 
@@ -143,9 +145,11 @@ impl Player {
                     if !self.new_game_sent {
                         self.new_game(new_tick, tx_clone.clone(), global_state.clone()).await;
                     }
+
+
                     self.process_inputs(&mut inputs, new_tick, global_state.clone()).await;
                     self.apply_input();
-                    self.objects(new_tick, global_state.clone(), is_ln_address.clone()).await;
+                    self.objects(new_tick, global_state.clone(), is_ln_address.clone(), tx_clone.clone()).await;
 
                     if self.game_start {
                         if let Some(player_state) = global_state.write().await.players.get_mut(&self.id) {
@@ -184,6 +188,7 @@ impl Player {
         info!("Player {} connected", name);
 
         self.name = name.clone();
+        self.spawn_time = Instant::now();
 
         let ln_address = LnAddress {
             address: self.name.clone(),
@@ -359,6 +364,7 @@ impl Player {
         new_tick: u64,
         global_state: Arc<RwLock<GlobalState>>,
         is_ln_address: Arc<RwLock<bool>>,
+        tx_clone: mpsc::UnboundedSender<NetworkMessage>,
     ) {
         let seed = global_state.read().await.rng_seed ^ new_tick;
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
@@ -405,6 +411,37 @@ impl Player {
         });
 
         if self.game_start {
+            if self.score == 21 {
+                let secs_alive = Instant::now() - self.spawn_time;
+                let seconds = secs_alive.as_secs();
+                self.game_start = false;
+                self.score = 0;
+                self.target = Vec2::ZERO;
+                self.pos = Vec3::new(0.0, -150.0, 0.0);
+
+                let damage_update_msg =
+                    NetworkMessage::DamagePlayer(Damage::new(self.id, None, seconds, true));
+
+                if let Err(disconnected) = tx_clone.send(damage_update_msg) {
+                    error!("Failed to send NewGame: {}", disconnected);
+                }
+
+                let player_disconnected_msg = NetworkMessage::PlayerDisconnected(self.id);
+                let players = global_state
+                    .read()
+                    .await
+                    .players
+                    .values()
+                    .cloned()
+                    .collect::<Vec<_>>();
+                for send_player in players {
+                    if let Err(disconnected) = send_player.tx.send(player_disconnected_msg.clone())
+                    {
+                        error!("Failed to send ScoreUpdate: {}", disconnected);
+                    }
+                }
+            }
+
             for i in (0..self.bolt.len()).rev() {
                 let object = &self.bolt[i];
                 if (object.pos.x - self.pos.x).abs() < 10.0
@@ -463,6 +500,8 @@ impl Player {
                     && (object.pos.y - self.pos.y).abs() < 10.0
                 {
                     let tick: u64 = object.tick;
+                    let secs_alive = Instant::now() - self.spawn_time;
+                    let seconds = secs_alive.as_secs();
                     self.rain.remove(i);
                     self.game_start = false;
                     self.score = 0;
@@ -473,8 +512,12 @@ impl Player {
                         player.alive = false;
                     }
 
-                    let damage_update_msg =
-                        NetworkMessage::DamagePlayer(Damage::new(self.id, tick));
+                    let damage_update_msg = NetworkMessage::DamagePlayer(Damage::new(
+                        self.id,
+                        Some(tick),
+                        seconds,
+                        false,
+                    ));
 
                     let players = global_state
                         .read()
