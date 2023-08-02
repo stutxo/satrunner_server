@@ -4,7 +4,7 @@ use glam::{Vec2, Vec3};
 use log::{error, info, warn};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
-use redis::Commands;
+use redis::{Commands, RedisError};
 use speedy::Readable;
 use tokio::sync::{
     mpsc::{self, Receiver},
@@ -445,18 +445,23 @@ impl Player {
                     let mut state = global_state.write().await;
                     let redis_client = &mut state.redis;
                     if let Some(redis_client) = redis_client {
-                        let current_score: Option<f64> =
-                            redis_client.zscore("high_scores", &self.name).unwrap();
-                        if current_score.map_or(true, |cs| cs > seconds as f64) {
-                            let _: () = redis_client
-                                .zadd("high_scores", &self.name, seconds)
-                                .unwrap();
+                        let current_score_result: Result<Option<f64>, RedisError> =
+                            redis_client.zscore("high_scores", &self.name);
+                        match current_score_result {
+                            Ok(current_score) => {
+                                if current_score.map_or(true, |cs| cs > seconds as f64) {
+                                    let _: () = redis_client
+                                        .zadd("high_scores", &self.name, seconds)
+                                        .unwrap_or_else(|_| {
+                                            error!("Failed to add to high_scores");
+                                        });
+                                }
+                                high_scores = redis_client
+                                    .zrange_withscores("high_scores", 0, 4)
+                                    .unwrap_or(Vec::new());
+                            }
+                            Err(e) => error!("Failed to get current score: {}", e),
                         }
-                        high_scores = redis_client
-                            .zrange_withscores("high_scores", 0, 4)
-                            .unwrap_or(Vec::new());
-                    } else {
-                        error!("Redis client not initialized");
                     }
                 }
 
