@@ -21,7 +21,7 @@ pub struct GlobalState {
     pub rng_seed: u64,
     pub zbd: ZebedeeClient,
     pub server_tick: Receiver<u64>,
-    pub redis: redis::Connection,
+    pub redis: Option<redis::Connection>,
 }
 
 impl GlobalState {
@@ -31,13 +31,21 @@ impl GlobalState {
             "redis://clustercfg.rainrun.bd7hwg.memorydb.eu-west-2.amazonaws.com:6379",
         )
         .unwrap();
-        info!("Connected to Redis {:?}", client);
+
+        let connection = match client.get_connection() {
+            Ok(connection) => Some(connection),
+            Err(e) => {
+                info!("Failed to connect to Redis: {:?}", e);
+                None
+            }
+        };
+
         Self {
             players: HashMap::new(),
             rng_seed,
             zbd,
             server_tick,
-            redis: client.get_connection().unwrap(),
+            redis: connection,
         }
     }
 }

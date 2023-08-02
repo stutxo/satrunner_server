@@ -250,6 +250,7 @@ impl Player {
         global_state: Arc<RwLock<GlobalState>>,
     ) {
         let mut player_positions: HashMap<Uuid, PlayerInfo> = HashMap::new();
+        info!("new game!");
 
         for (&uuid, player_state) in global_state.read().await.players.iter() {
             if let Some(name) = &player_state.name {
@@ -279,9 +280,11 @@ impl Player {
         {
             let mut state = global_state.write().await;
             let redis_client = &mut state.redis;
-            high_scores = redis_client
-                .zrange_withscores("high_scores", 0, 4)
-                .unwrap_or(Vec::new());
+            if let Some(redis_client) = redis_client {
+                high_scores = redis_client
+                    .zrange_withscores("high_scores", 0, 4)
+                    .unwrap_or(Vec::new());
+            }
         }
 
         let rng_seed = global_state.read().await.rng_seed;
@@ -439,16 +442,18 @@ impl Player {
                 {
                     let mut state = global_state.write().await;
                     let redis_client = &mut state.redis;
-                    let current_score: Option<f64> =
-                        redis_client.zscore("high_scores", &self.name).unwrap();
-                    if current_score.map_or(true, |cs| cs > seconds as f64) {
-                        let _: () = redis_client
-                            .zadd("high_scores", &self.name, seconds)
-                            .unwrap();
+                    if let Some(redis_client) = redis_client {
+                        let current_score: Option<f64> =
+                            redis_client.zscore("high_scores", &self.name).unwrap();
+                        if current_score.map_or(true, |cs| cs > seconds as f64) {
+                            let _: () = redis_client
+                                .zadd("high_scores", &self.name, seconds)
+                                .unwrap();
+                        }
+                        high_scores = redis_client
+                            .zrange_withscores("high_scores", 0, 4)
+                            .unwrap_or(Vec::new());
                     }
-                    high_scores = redis_client
-                        .zrange_withscores("high_scores", 0, 4)
-                        .unwrap_or(Vec::new());
                 }
 
                 let damage_update_msg = NetworkMessage::DamagePlayer(Damage::new(
