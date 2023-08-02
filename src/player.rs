@@ -284,6 +284,8 @@ impl Player {
                 high_scores = redis_client
                     .zrange_withscores("high_scores", 0, 4)
                     .unwrap_or(Vec::new());
+            } else {
+                error!("Redis client not initialized");
             }
         }
 
@@ -453,6 +455,8 @@ impl Player {
                         high_scores = redis_client
                             .zrange_withscores("high_scores", 0, 4)
                             .unwrap_or(Vec::new());
+                    } else {
+                        error!("Redis client not initialized");
                     }
                 }
 
