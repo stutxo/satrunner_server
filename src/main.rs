@@ -28,7 +28,7 @@ impl GlobalState {
     fn new(rng_seed: u64, zbd: ZebedeeClient, server_tick: Receiver<u64>) -> Self {
         //let client = redis::Client::open("redis://127.0.0.1/").unwrap();
         let client = match redis::Client::open(
-            "redis://clustercfg.rainrun.bd7hwg.memorydb.eu-west-2.amazonaws.com:6379",
+            "redis://rain.bd7hwg.clustercfg.memorydb.eu-west-2.amazonaws.com",
         ) {
             Ok(client) => client,
             Err(e) => {
