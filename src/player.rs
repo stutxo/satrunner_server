@@ -26,7 +26,7 @@ use crate::{
 
 pub const X_BOUNDS: f32 = 100.0;
 pub const Y_BOUNDS: f32 = 50.0;
-pub const PLAYER_SPEED: f32 = 0.5;
+pub const PLAYER_SPEED: f32 = 0.25;
 pub const FALL_SPEED: f32 = 0.5;
 
 #[derive(Debug)]
