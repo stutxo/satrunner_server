@@ -26,7 +26,7 @@ pub struct GlobalState {
 
 impl GlobalState {
     fn new(rng_seed: u64, zbd: ZebedeeClient, server_tick: Receiver<u64>) -> Self {
-        //let client = redis::Client::open("redis://127.0.0.1/").unwrap();
+        // let client = match redis::Client::open("redis://127.0.0.1/") {
         let client = match redis::Client::open(
             "redis://rain.bd7hwg.clustercfg.memorydb.eu-west-2.amazonaws.com",
         ) {
@@ -88,12 +88,12 @@ impl GlobalPlayer {
 async fn main() {
     pretty_env_logger::init_timed();
 
-    // let api_key_json: String = env::var("ZBD_API_KEY").unwrap();
-    // let value: Value = serde_json::from_str(&api_key_json).unwrap();
-    // let api_key = value["ZBD_API_KEY"].as_str().unwrap().to_string();
-    // let zebedee_client = ZebedeeClient::new().apikey(api_key).build();
+    let api_key_json: String = env::var("ZBD_API_KEY").unwrap();
+    let value: Value = serde_json::from_str(&api_key_json).unwrap();
+    let api_key = value["ZBD_API_KEY"].as_str().unwrap().to_string();
+    let zebedee_client = ZebedeeClient::new().apikey(api_key).build();
 
-    let zebedee_client = ZebedeeClient::new().apikey("test".to_string()).build();
+    //let zebedee_client = ZebedeeClient::new().apikey("test".to_string()).build();
 
     let rng_seed = rand::thread_rng().gen::<u64>();
 
