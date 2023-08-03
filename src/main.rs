@@ -26,10 +26,10 @@ pub struct GlobalState {
 
 impl GlobalState {
     fn new(rng_seed: u64, zbd: ZebedeeClient, server_tick: Receiver<u64>) -> Self {
-        //let client = match redis::Client::open("redis://127.0.0.1/") {
-        let client = match redis::Client::open(
-            "redis://rain.bd7hwg.clustercfg.memorydb.eu-west-2.amazonaws.com",
-        ) {
+        let client = match redis::Client::open("redis://127.0.0.1/") {
+            // let client = match redis::Client::open(
+            //     "redis://rain.bd7hwg.clustercfg.memorydb.eu-west-2.amazonaws.com",
+            // ) {
             Ok(client) => client,
             Err(e) => {
                 info!("Failed to connect to Redis: {:?}", e);

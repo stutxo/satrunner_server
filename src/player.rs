@@ -24,10 +24,10 @@ use crate::{
     GlobalState,
 };
 
-pub const X_BOUNDS: f32 = 100.0;
-pub const Y_BOUNDS: f32 = 50.0;
-pub const PLAYER_SPEED: f32 = 0.25;
-pub const FALL_SPEED: f32 = 0.5;
+pub const X_BOUNDS: f32 = 1000.0;
+pub const Y_BOUNDS: f32 = 500.0;
+pub const PLAYER_SPEED: f32 = 2.5;
+pub const FALL_SPEED: f32 = 4.0;
 
 #[derive(Debug)]
 pub struct ObjectPos {
@@ -55,7 +55,7 @@ impl Player {
     pub fn new(id: Uuid) -> Self {
         Self {
             target: Vec2::ZERO,
-            pos: Vec3::new(0.0, -25.0, 0.0),
+            pos: Vec3::new(0.0, -150.0, 0.0),
             id,
             score: 0,
             name: String::new(),
@@ -82,7 +82,7 @@ impl Player {
 
     pub fn calculate_movement(&self) -> Vec2 {
         let direction = self.target - Vec2::new(self.pos.x, self.pos.y);
-        let tolerance = 0.6;
+        let tolerance = 6.0;
 
         if direction.length() > tolerance {
             direction.normalize() * PLAYER_SPEED
@@ -437,7 +437,7 @@ impl Player {
                 self.game_start = false;
                 self.score = 0;
                 self.target = Vec2::ZERO;
-                self.pos = Vec3::new(0.0, -25.0, 0.0);
+                self.pos = Vec3::new(0.0, -150.0, 0.0);
 
                 let mut high_scores: Vec<(String, u64)> = Vec::new();
 
@@ -519,8 +519,8 @@ impl Player {
 
             for i in (0..self.bolt.len()).rev() {
                 let object = &self.bolt[i];
-                if (object.pos.x - self.pos.x).abs() < 1.0
-                    && (object.pos.y - self.pos.y).abs() < 1.0
+                if (object.pos.x - self.pos.x).abs() < 10.0
+                    && (object.pos.y - self.pos.y).abs() < 10.0
                 {
                     let tick = object.tick;
                     self.score += 1;
@@ -547,8 +547,8 @@ impl Player {
 
             for i in (0..self.rain.len()).rev() {
                 let object = &self.rain[i];
-                if (object.pos.x - self.pos.x).abs() < 1.0
-                    && (object.pos.y - self.pos.y).abs() < 1.0
+                if (object.pos.x - self.pos.x).abs() < 10.0
+                    && (object.pos.y - self.pos.y).abs() < 10.0
                 {
                     let tick: u64 = object.tick;
                     let secs_alive = Instant::now() - self.spawn_time.unwrap();
@@ -557,7 +557,7 @@ impl Player {
                     self.game_start = false;
                     self.score = 0;
                     self.target = Vec2::ZERO;
-                    self.pos = Vec3::new(0.0, -25.0, 0.0);
+                    self.pos = Vec3::new(0.0, -150.0, 0.0);
 
                     if let Some(player) = global_state.write().await.players.get_mut(&self.id) {
                         player.alive = false;
