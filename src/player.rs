@@ -437,7 +437,7 @@ impl Player {
                 self.game_start = false;
                 self.score = 0;
                 self.target = Vec2::ZERO;
-                self.pos = Vec3::new(0.0, -150.0, 0.0);
+                self.pos = Vec3::new(0.0, -25.0, 0.0);
 
                 let mut high_scores: Vec<(String, u64)> = Vec::new();
 
@@ -484,7 +484,7 @@ impl Player {
                 if *is_ln_address {
                     let payment = LnPayment {
                         ln_address: self.name.clone(),
-                        amount: String::from("21000"),
+                        amount: String::from("2100000"),
                         ..Default::default()
                     };
 
