@@ -334,7 +334,7 @@ impl Player {
                     update_needed = true;
                     false
                 }
-                tick if tick > new_tick + 4 => {
+                tick if tick > new_tick + 5 => {
                     if !self.msg_sent.contains(&tick) {
                         let diff = tick as i64 - new_tick as i64;
                         tick_adjustment = diff;
@@ -438,6 +438,10 @@ impl Player {
                 self.score = 0;
                 self.target = Vec2::ZERO;
                 self.pos = Vec3::new(0.0, -150.0, 0.0);
+
+                if let Some(player) = global_state.write().await.players.get_mut(&self.id) {
+                    player.alive = false;
+                }
 
                 let mut high_scores: Vec<(String, u64)> = Vec::new();
 
