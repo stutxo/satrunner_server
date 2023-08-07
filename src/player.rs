@@ -503,21 +503,6 @@ impl Player {
                         }
                     });
                 }
-
-                let player_disconnected_msg = NetworkMessage::PlayerDisconnected(self.id);
-                let players = global_state
-                    .read()
-                    .await
-                    .players
-                    .values()
-                    .cloned()
-                    .collect::<Vec<_>>();
-                for send_player in players {
-                    if let Err(disconnected) = send_player.tx.send(player_disconnected_msg.clone())
-                    {
-                        error!("Failed to send ScoreUpdate: {}", disconnected);
-                    }
-                }
             }
 
             for i in (0..self.bolt.len()).rev() {
@@ -582,22 +567,6 @@ impl Player {
                         .collect::<Vec<_>>();
                     for send_player in players {
                         if let Err(disconnected) = send_player.tx.send(damage_update_msg.clone()) {
-                            error!("Failed to send ScoreUpdate: {}", disconnected);
-                        }
-                    }
-
-                    let player_disconnected_msg = NetworkMessage::PlayerDisconnected(self.id);
-                    let players = global_state
-                        .read()
-                        .await
-                        .players
-                        .values()
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    for send_player in players {
-                        if let Err(disconnected) =
-                            send_player.tx.send(player_disconnected_msg.clone())
-                        {
                             error!("Failed to send ScoreUpdate: {}", disconnected);
                         }
                     }
