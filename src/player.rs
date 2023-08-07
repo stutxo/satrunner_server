@@ -130,7 +130,9 @@ impl Player {
                                     self.game_start = true;
                                 }
                                 Ok(ClientMessage::PlayerInput(input)) => {
+                                    info!("{:?}", input );
                                     inputs.push(input);
+
                                 }
                                 Err(e) => {
                                     error!("error reading message: {}", e);
@@ -250,7 +252,6 @@ impl Player {
         global_state: Arc<RwLock<GlobalState>>,
     ) {
         let mut player_positions: HashMap<Uuid, PlayerInfo> = HashMap::new();
-        info!("new game!");
 
         for (&uuid, player_state) in global_state.read().await.players.iter() {
             if let Some(name) = &player_state.name {
@@ -436,8 +437,6 @@ impl Player {
                 let seconds = secs_alive.as_secs();
                 self.game_start = false;
                 self.score = 0;
-                self.target = Vec2::ZERO;
-                self.pos = Vec3::new(0.0, -150.0, 0.0);
 
                 if let Some(player) = global_state.write().await.players.get_mut(&self.id) {
                     player.alive = false;
@@ -560,8 +559,7 @@ impl Player {
                     self.rain.remove(i);
                     self.game_start = false;
                     self.score = 0;
-                    self.target = Vec2::ZERO;
-                    self.pos = Vec3::new(0.0, -150.0, 0.0);
+                    self.target = self.pos.truncate();
 
                     if let Some(player) = global_state.write().await.players.get_mut(&self.id) {
                         player.alive = false;
