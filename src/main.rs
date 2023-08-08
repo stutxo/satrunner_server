@@ -64,7 +64,7 @@ impl GlobalState {
 #[derive(Debug, Clone)]
 pub struct GlobalPlayer {
     pub tx: UnboundedSender<NetworkMessage>,
-    pub pos: Option<f32>,
+    pub pos: Option<[f32; 2]>,
     pub target: [f32; 2],
     pub score: usize,
     pub name: Option<String>,

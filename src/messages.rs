@@ -26,7 +26,7 @@ pub struct NewPos {
     pub input: [f32; 2],
     pub tick: u64,
     pub id: Uuid,
-    pub pos: f32,
+    pub pos: [f32; 2],
     pub tick_adjustment: i64,
     pub adjustment_iteration: u64,
 }
@@ -36,7 +36,7 @@ impl NewPos {
         input: [f32; 2],
         tick: u64,
         id: Uuid,
-        pos: f32,
+        pos: [f32; 2],
         tick_adjustment: i64,
         adjustment_iteration: u64,
     ) -> Self {
@@ -63,7 +63,7 @@ pub struct NewGame {
     pub id: Uuid,
     pub server_tick: u64,
     pub rng_seed: u64,
-    pub player_positions: HashMap<Uuid, PlayerInfo>,
+    pub player_positions: HashMap<Uuid, PlayerPos>,
     pub high_scores: Vec<(String, u64)>,
 }
 
@@ -72,7 +72,7 @@ impl NewGame {
         id: Uuid,
         server_tick: u64,
         rng_seed: u64,
-        player_positions: HashMap<Uuid, PlayerInfo>,
+        player_positions: HashMap<Uuid, PlayerPos>,
         high_scores: Vec<(String, u64)>,
     ) -> Self {
         Self {
@@ -86,17 +86,17 @@ impl NewGame {
 }
 
 #[derive(Readable, Writable, Debug, Clone)]
-pub struct PlayerInfo {
-    pub pos: Option<f32>,
+pub struct PlayerPos {
+    pub pos: Option<[f32; 2]>,
     pub target: [f32; 2],
     pub score: usize,
     pub name: Option<String>,
     pub alive: bool,
 }
 
-impl PlayerInfo {
+impl PlayerPos {
     pub fn new(
-        pos: Option<f32>,
+        pos: Option<[f32; 2]>,
         target: [f32; 2],
         score: usize,
         name: Option<String>,

@@ -18,16 +18,16 @@ use zebedee_rust::ln_address::{LnAddress, LnPayment};
 
 use crate::{
     messages::{
-        ClientMessage, Damage, NetworkMessage, NewGame, NewPos, PlayerConnected, PlayerInfo,
-        PlayerInput, Score,
+        ClientMessage, Damage, NetworkMessage, NewGame, NewPos, PlayerConnected, PlayerInput,
+        PlayerPos, Score,
     },
     GlobalState,
 };
 
 pub const X_BOUNDS: f32 = 1000.0;
 pub const Y_BOUNDS: f32 = 500.0;
-pub const PLAYER_SPEED: f32 = 2.5;
-pub const FALL_SPEED: f32 = 4.0;
+pub const PLAYER_SPEED: f32 = 2.0;
+pub const FALL_SPEED: f32 = 1.0;
 
 #[derive(Debug)]
 pub struct ObjectPos {
@@ -55,7 +55,7 @@ impl Player {
     pub fn new(id: Uuid) -> Self {
         Self {
             target: Vec2::ZERO,
-            pos: Vec3::new(0.0, -150.0, 0.0),
+            pos: Vec3::new(0.0, 0.0, 0.0),
             id,
             score: 0,
             name: String::new(),
@@ -76,7 +76,7 @@ impl Player {
         if (self.pos.x + movement.x).abs() <= X_BOUNDS
             && (self.pos.y + movement.y).abs() <= Y_BOUNDS
         {
-            self.pos += Vec3::new(movement.x, 0.0, 0.0);
+            self.pos += Vec3::new(movement.x, movement.y, 0.0);
         }
     }
 
@@ -102,7 +102,7 @@ impl Player {
             [self.target.x, self.target.y],
             new_tick,
             player_id,
-            self.pos.x,
+            [self.pos.x, self.pos.y],
             tick_adjustment,
             adjusment_iteration,
         ))
@@ -156,7 +156,7 @@ impl Player {
 
                     if self.game_start {
                         if let Some(player_state) = global_state.write().await.players.get_mut(&self.id) {
-                            player_state.pos = Some(self.pos.x);
+                            player_state.pos = Some([self.pos.x, self.pos.y]);
                             player_state.target = [self.target.x, self.target.y];
                             player_state.score = self.score;
                             player_state.name = Some(self.name.clone());
@@ -251,12 +251,14 @@ impl Player {
         tx_clone: mpsc::UnboundedSender<NetworkMessage>,
         global_state: Arc<RwLock<GlobalState>>,
     ) {
-        let mut player_positions: HashMap<Uuid, PlayerInfo> = HashMap::new();
+        let mut player_positions: HashMap<Uuid, PlayerPos> = HashMap::new();
 
         for (&uuid, player_state) in global_state.read().await.players.iter() {
             if let Some(name) = &player_state.name {
-                let player = PlayerInfo::new(
-                    player_state.pos,
+                let position = player_state.pos.map(|pos| [pos[0], pos[1]]);
+
+                let player = PlayerPos::new(
+                    position,
                     player_state.target,
                     player_state.score,
                     Some(name.to_string()),
@@ -265,7 +267,7 @@ impl Player {
 
                 player_positions.insert(uuid, player);
             } else {
-                let player = PlayerInfo::new(
+                let player = PlayerPos::new(
                     player_state.pos,
                     player_state.target,
                     player_state.score,
@@ -410,7 +412,7 @@ impl Player {
         }
 
         for object in self.rain.iter_mut() {
-            object.pos.y += FALL_SPEED * -0.5
+            object.pos.y += FALL_SPEED * -1.0
         }
 
         self.rain.retain(|object| {
@@ -421,7 +423,7 @@ impl Player {
         });
 
         for object in self.bolt.iter_mut() {
-            object.pos.y += FALL_SPEED * -0.5
+            object.pos.y += FALL_SPEED * -1.0
         }
 
         self.bolt.retain(|object: &ObjectPos| {
