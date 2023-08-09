@@ -1,4 +1,4 @@
-pub const TICK_RATE: f32 = 1.0 / 15.0;
+pub const TICK_RATE: f32 = 1.0 / 10.0;
 
 pub async fn server_loop(tick_tx: tokio::sync::watch::Sender<u64>) {
     let mut last_instant = std::time::Instant::now();
