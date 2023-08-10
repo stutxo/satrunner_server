@@ -337,7 +337,7 @@ impl Player {
                     update_needed = true;
                     false
                 }
-                tick if tick > new_tick + 5 => {
+                tick if tick > new_tick + 2 => {
                     if !self.msg_sent.contains(&tick) {
                         let diff = tick as i64 - new_tick as i64;
                         tick_adjustment = diff;
