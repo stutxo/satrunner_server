@@ -142,6 +142,7 @@ impl Player {
                                     .cloned()
                                     .collect::<Vec<_>>();
                                 for send_player in players {
+
                                     if let Err(disconnected) = send_player.tx.send(NetworkMessage::PlayerInput(input_clone.clone())) {
                                         error!("Failed to send GameUpdate: {}", disconnected);
                                     }
