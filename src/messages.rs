@@ -145,6 +145,7 @@ pub struct Damage {
     pub secs_alive: u64,
     pub win: bool,
     pub high_scores: Option<Vec<(String, u64)>>,
+    pub pos: [f32; 2],
 }
 
 impl Damage {
@@ -154,6 +155,7 @@ impl Damage {
         secs_alive: u64,
         win: bool,
         high_scores: Option<Vec<(String, u64)>>,
+        pos: [f32; 2],
     ) -> Self {
         Self {
             id,
@@ -161,6 +163,7 @@ impl Damage {
             secs_alive,
             win,
             high_scores,
+            pos,
         }
     }
 }

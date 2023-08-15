@@ -131,23 +131,7 @@ impl Player {
                                 }
                                 Ok(ClientMessage::PlayerInput(input)) => {
                                     info!("{:?}", input );
-                                    let input_clone = input.clone();
                                     inputs.push(input);
-
-                                    let players = global_state
-                                    .read()
-                                    .await
-                                    .players
-                                    .values()
-                                    .cloned()
-                                    .collect::<Vec<_>>();
-                                for send_player in players {
-
-                                    if let Err(disconnected) = send_player.tx.send(NetworkMessage::PlayerInput(input_clone.clone())) {
-                                        error!("Failed to send GameUpdate: {}", disconnected);
-                                    }
-                                }
-
                                 }
                                 Err(e) => {
                                     error!("error reading message: {}", e);
@@ -165,7 +149,7 @@ impl Player {
                     }
 
 
-                    self.process_inputs(&mut inputs, new_tick, tx_clone.clone()).await;
+                    self.process_inputs(&mut inputs, new_tick, global_state.clone()).await;
                     self.apply_input();
                     self.objects(new_tick, global_state.clone(), is_ln_address.clone(), tx_clone.clone()).await;
 
@@ -327,7 +311,7 @@ impl Player {
         &mut self,
         inputs: &mut Vec<PlayerInput>,
         new_tick: u64,
-        tx_clone: mpsc::UnboundedSender<NetworkMessage>,
+        global_state: Arc<RwLock<GlobalState>>,
     ) {
         let mut tick_adjustment: i64 = 0;
         let mut game_update: Option<NetworkMessage> = None;
@@ -352,7 +336,7 @@ impl Player {
                     update_needed = true;
                     false
                 }
-                tick if tick > new_tick + 4 => {
+                tick if tick > new_tick + 2 => {
                     if !self.msg_sent.contains(&tick) {
                         let diff = tick as i64 - new_tick as i64;
                         tick_adjustment = diff;
@@ -382,9 +366,18 @@ impl Player {
             !update_needed
         });
         if let Some(game_update_msg) = game_update {
-            tx_clone.send(game_update_msg).unwrap_or_else(|_| {
-                error!("Failed to send GameUpdate");
-            });
+            let players = global_state
+                .read()
+                .await
+                .players
+                .values()
+                .cloned()
+                .collect::<Vec<_>>();
+            for send_player in players {
+                if let Err(disconnected) = send_player.tx.send(game_update_msg.clone()) {
+                    error!("Failed to send GameUpdate: {}", disconnected);
+                }
+            }
         }
     }
 
@@ -476,12 +469,15 @@ impl Player {
                     }
                 }
 
+                let pos = [self.pos.x, self.pos.y];
+
                 let damage_update_msg = NetworkMessage::DamagePlayer(Damage::new(
                     self.id,
                     None,
                     seconds,
                     true,
                     Some(high_scores),
+                    pos,
                 ));
 
                 if let Err(disconnected) = tx_clone.send(damage_update_msg) {
@@ -558,12 +554,15 @@ impl Player {
                         player.alive = false;
                     }
 
+                    let pos = [self.pos.x, self.pos.y];
+
                     let damage_update_msg = NetworkMessage::DamagePlayer(Damage::new(
                         self.id,
                         Some(tick),
                         seconds,
                         false,
                         None,
+                        pos,
                     ));
 
                     let players = global_state
