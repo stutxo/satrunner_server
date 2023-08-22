@@ -64,7 +64,7 @@ pub struct NewGame {
     pub id: Uuid,
     pub server_tick: u64,
     pub rng_seed: u64,
-    // pub player_positions: HashMap<Uuid, PlayerPos>,
+    pub player_positions: HashMap<Uuid, PlayerPos>,
     pub high_scores: Vec<(String, u64)>,
 }
 
@@ -73,14 +73,14 @@ impl NewGame {
         id: Uuid,
         server_tick: u64,
         rng_seed: u64,
-        // player_positions: HashMap<Uuid, PlayerPos>,
+        player_positions: HashMap<Uuid, PlayerPos>,
         high_scores: Vec<(String, u64)>,
     ) -> Self {
         Self {
             id,
             server_tick,
             rng_seed,
-            // player_positions,
+            player_positions,
             high_scores,
         }
     }

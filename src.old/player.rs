@@ -21,7 +21,7 @@ use crate::{
         ClientMessage, Damage, NetworkMessage, NewGame, NewPos, PlayerConnected, PlayerInput,
         PlayerPos, Score,
     },
-    GlobalState,
+    GlobalState, PlayerScores,
 };
 
 pub const X_BOUNDS: f32 = 1000.0;
@@ -39,7 +39,6 @@ pub struct Player {
     pub target: Vec2,
     pub pos: Vec3,
     pub id: Uuid,
-    pub score: usize,
     pub name: String,
     pub adjusment_iteration: u64,
     pub msg_sent: Vec<u64>,
@@ -57,7 +56,6 @@ impl Player {
             target: Vec2::ZERO,
             pos: Vec3::new(0.0, 0.0, 0.0),
             id,
-            score: 0,
             name: String::new(),
             adjusment_iteration: 0,
             msg_sent: Vec::new(),
@@ -114,6 +112,7 @@ impl Player {
         global_state: Arc<RwLock<GlobalState>>,
         tx_clone: mpsc::UnboundedSender<NetworkMessage>,
         input_rx: &mut UnboundedReceiverStream<Message>,
+        player_scores: Arc<RwLock<PlayerScores>>,
     ) {
         let mut inputs = Vec::new();
         let mut server_tick = global_state.read().await.server_tick.clone();
@@ -126,11 +125,11 @@ impl Player {
                         if msg.is_binary() {
                             match ClientMessage::read_from_buffer(msg.as_bytes()) {
                                 Ok(ClientMessage::PlayerName(name)) => {
-                                    self.player_name(name, global_state.clone(), is_ln_address.clone()).await;
+                                    self.player_name(name, global_state.clone(), is_ln_address.clone(), player_scores.clone()).await;
                                     self.game_start = true;
                                 }
                                 Ok(ClientMessage::PlayerInput(input)) => {
-                                    info!("{:?}", input );
+
                                     inputs.push(input);
                                 }
                                 Err(e) => {
@@ -149,15 +148,14 @@ impl Player {
                     }
 
 
+
+                    self.objects( global_state.clone(), is_ln_address.clone(), tx_clone.clone(), player_scores.clone(), new_tick).await;
                     self.process_inputs(&mut inputs, new_tick, global_state.clone()).await;
-                    self.apply_input();
-                    self.objects(new_tick, global_state.clone(), is_ln_address.clone(), tx_clone.clone()).await;
 
                     if self.game_start {
                         if let Some(player_state) = global_state.write().await.players.get_mut(&self.id) {
                             player_state.pos = Some([self.pos.x, self.pos.y]);
                             player_state.target = [self.target.x, self.target.y];
-                            player_state.score = self.score;
                             player_state.name = Some(self.name.clone());
                         }
                     }
@@ -186,6 +184,7 @@ impl Player {
         name: String,
         global_state: Arc<RwLock<GlobalState>>,
         is_ln_address: Arc<RwLock<bool>>,
+        player_scores: Arc<RwLock<PlayerScores>>,
     ) {
         info!("Player {} connected", name);
 
@@ -223,6 +222,12 @@ impl Player {
                 error!("{:?}", e);
             }
         }
+
+        player_scores
+            .write()
+            .await
+            .player_alive
+            .insert(self.id, true);
 
         let player_connected = PlayerConnected::new(self.id, self.name.clone());
 
@@ -365,6 +370,7 @@ impl Player {
             }
             !update_needed
         });
+        self.apply_input();
         if let Some(game_update_msg) = game_update {
             let players = global_state
                 .read()
@@ -383,200 +389,125 @@ impl Player {
 
     async fn objects(
         &mut self,
-        new_tick: u64,
         global_state: Arc<RwLock<GlobalState>>,
         is_ln_address: Arc<RwLock<bool>>,
         tx_clone: mpsc::UnboundedSender<NetworkMessage>,
+        player_scores: Arc<RwLock<PlayerScores>>,
+        new_tick: u64,
     ) {
-        let seed = global_state.read().await.rng_seed ^ new_tick;
-        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let score = player_scores
+            .read()
+            .await
+            .player_scores
+            .get(&self.id)
+            .cloned();
 
-        let x_position: f32 = rng.gen_range(-X_BOUNDS..X_BOUNDS);
-        let y_position: f32 = Y_BOUNDS;
+        if self.game_start && score == Some(2) {
+            let secs_alive = Instant::now() - self.spawn_time.unwrap();
+            let seconds = secs_alive.as_secs();
+            self.game_start = false;
 
-        if new_tick % 5 != 0 {
-            let pos_start = Vec3::new(x_position, y_position, 0.0);
-            let new_pos = ObjectPos {
-                tick: new_tick,
-                pos: pos_start,
-            };
-            self.rain.push(new_pos);
-        } else {
-            let pos_start = Vec3::new(x_position, y_position, 0.0);
-            let new_pos = ObjectPos {
-                tick: new_tick,
-                pos: pos_start,
-            };
-            self.bolt.push(new_pos);
-        }
+            let mut high_scores: Vec<(String, u64)> = Vec::new();
 
-        for object in self.rain.iter_mut() {
-            object.pos.y += FALL_SPEED * -1.0
-        }
+            {
+                let mut state = global_state.write().await;
 
-        self.rain.retain(|object| {
-            object.pos.y >= -Y_BOUNDS
-                && object.pos.y <= Y_BOUNDS
-                && object.pos.x >= -X_BOUNDS
-                && object.pos.x <= X_BOUNDS
-        });
-
-        for object in self.bolt.iter_mut() {
-            object.pos.y += FALL_SPEED * -1.0
-        }
-
-        self.bolt.retain(|object: &ObjectPos| {
-            object.pos.y >= -Y_BOUNDS
-                && object.pos.y <= Y_BOUNDS
-                && object.pos.x >= -X_BOUNDS
-                && object.pos.x <= X_BOUNDS
-        });
-
-        if self.game_start {
-            if self.score == 21 {
-                let secs_alive = Instant::now() - self.spawn_time.unwrap();
-                let seconds = secs_alive.as_secs();
-                self.game_start = false;
-                self.score = 0;
-
-                if let Some(player) = global_state.write().await.players.get_mut(&self.id) {
-                    player.alive = false;
-                }
-
-                let mut high_scores: Vec<(String, u64)> = Vec::new();
-
-                {
-                    let mut state = global_state.write().await;
-                    let redis_client = &mut state.redis;
-                    if let Some(redis_client) = redis_client {
-                        let current_score_result: Result<Option<f64>, RedisError> =
-                            redis_client.zscore("high_scores", &self.name);
-                        match current_score_result {
-                            Ok(current_score) => {
-                                if current_score.map_or(true, |cs| cs > seconds as f64) {
-                                    let _: () = redis_client
-                                        .zadd("high_scores", &self.name, seconds)
-                                        .unwrap_or_else(|_| {
-                                            error!("Failed to add to high_scores");
-                                        });
-                                }
-                                high_scores = redis_client
-                                    .zrange_withscores("high_scores", 0, 4)
-                                    .unwrap_or(Vec::new());
+                let redis_client = &mut state.redis;
+                if let Some(redis_client) = redis_client {
+                    let current_score_result: Result<Option<f64>, RedisError> =
+                        redis_client.zscore("high_scores", &self.name);
+                    match current_score_result {
+                        Ok(current_score) => {
+                            if current_score.map_or(true, |cs| cs > seconds as f64) {
+                                let _: () = redis_client
+                                    .zadd("high_scores", &self.name, seconds)
+                                    .unwrap_or_else(|_| {
+                                        error!("Failed to add to high_scores");
+                                    });
                             }
-                            Err(e) => error!("Failed to get current score: {}", e),
+                            high_scores = redis_client
+                                .zrange_withscores("high_scores", 0, 4)
+                                .unwrap_or(Vec::new());
                         }
-                    }
-                }
-
-                let pos = [self.pos.x, self.pos.y];
-
-                let damage_update_msg = NetworkMessage::DamagePlayer(Damage::new(
-                    self.id,
-                    None,
-                    seconds,
-                    true,
-                    Some(high_scores),
-                    pos,
-                ));
-
-                if let Err(disconnected) = tx_clone.send(damage_update_msg) {
-                    error!("Failed to send NewGame: {}", disconnected);
-                }
-
-                let zebedee_client = global_state.read().await.zbd.clone();
-
-                let is_ln_address = is_ln_address.read().await;
-
-                if *is_ln_address {
-                    let payment = LnPayment {
-                        ln_address: self.name.clone(),
-                        amount: String::from("2100000"),
-                        ..Default::default()
-                    };
-
-                    tokio::spawn(async move {
-                        let payment_response = zebedee_client.pay_ln_address(&payment).await;
-
-                        match payment_response {
-                            Ok(response) => info!(
-                                "Payment sent to {:?}: {:?}",
-                                payment.ln_address, response.data
-                            ),
-                            Err(e) => info!("Payment failed {:?}", e),
-                        }
-                    });
-                }
-            }
-
-            for i in (0..self.bolt.len()).rev() {
-                let object = &self.bolt[i];
-                if (object.pos.x - self.pos.x).abs() < 10.0
-                    && (object.pos.y - self.pos.y).abs() < 10.0
-                {
-                    let tick = object.tick;
-                    self.score += 1;
-                    self.bolt.remove(i);
-
-                    let score_update_msg =
-                        NetworkMessage::ScoreUpdate(Score::new(self.id, self.score, tick));
-                    info!("score: {:?}", score_update_msg);
-
-                    let players = global_state
-                        .read()
-                        .await
-                        .players
-                        .values()
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    for send_player in players {
-                        if let Err(disconnected) = send_player.tx.send(score_update_msg.clone()) {
-                            error!("Failed to send ScoreUpdate: {}", disconnected);
-                        }
+                        Err(e) => error!("Failed to get current score: {}", e),
                     }
                 }
             }
 
-            for i in (0..self.rain.len()).rev() {
-                let object = &self.rain[i];
-                if (object.pos.x - self.pos.x).abs() < 10.0
-                    && (object.pos.y - self.pos.y).abs() < 10.0
-                {
-                    let tick: u64 = object.tick;
-                    let secs_alive = Instant::now() - self.spawn_time.unwrap();
-                    let seconds = secs_alive.as_secs();
-                    self.rain.remove(i);
-                    self.game_start = false;
-                    self.score = 0;
-                    self.target = self.pos.truncate();
+            let pos = [self.pos.x, self.pos.y];
 
-                    if let Some(player) = global_state.write().await.players.get_mut(&self.id) {
-                        player.alive = false;
+            let damage_update_msg = NetworkMessage::DamagePlayer(Damage::new(
+                self.id,
+                None,
+                seconds,
+                true,
+                Some(high_scores),
+                pos,
+            ));
+
+            if let Err(disconnected) = tx_clone.send(damage_update_msg) {
+                error!("Failed to send NewGame: {}", disconnected);
+            }
+
+            let zebedee_client = global_state.read().await.zbd.clone();
+
+            let is_ln_address = is_ln_address.read().await;
+
+            if *is_ln_address {
+                let payment = LnPayment {
+                    ln_address: self.name.clone(),
+                    amount: String::from("2100000"),
+                    ..Default::default()
+                };
+
+                tokio::spawn(async move {
+                    let payment_response = zebedee_client.pay_ln_address(&payment).await;
+
+                    match payment_response {
+                        Ok(response) => info!(
+                            "Payment sent to {:?}: {:?}",
+                            payment.ln_address, response.data
+                        ),
+                        Err(e) => info!("Payment failed {:?}", e),
                     }
+                });
+            }
+        }
 
-                    let pos = [self.pos.x, self.pos.y];
+        let alive = player_scores
+            .read()
+            .await
+            .player_alive
+            .get(&self.id)
+            .cloned();
 
-                    let damage_update_msg = NetworkMessage::DamagePlayer(Damage::new(
-                        self.id,
-                        Some(tick),
-                        seconds,
-                        false,
-                        None,
-                        pos,
-                    ));
+        if self.game_start && alive == Some(false) {
+            let secs_alive = Instant::now() - self.spawn_time.unwrap();
+            let seconds = secs_alive.as_secs();
+            self.game_start = false;
+            self.target = self.pos.truncate();
 
-                    let players = global_state
-                        .read()
-                        .await
-                        .players
-                        .values()
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    for send_player in players {
-                        if let Err(disconnected) = send_player.tx.send(damage_update_msg.clone()) {
-                            error!("Failed to send ScoreUpdate: {}", disconnected);
-                        }
-                    }
+            let pos = [self.pos.x, self.pos.y];
+
+            let damage_update_msg = NetworkMessage::DamagePlayer(Damage::new(
+                self.id,
+                Some(new_tick),
+                seconds,
+                false,
+                None,
+                pos,
+            ));
+
+            let players = global_state
+                .read()
+                .await
+                .players
+                .values()
+                .cloned()
+                .collect::<Vec<_>>();
+            for send_player in players {
+                if let Err(disconnected) = send_player.tx.send(damage_update_msg.clone()) {
+                    error!("Failed to send ScoreUpdate: {}", disconnected);
                 }
             }
         }
