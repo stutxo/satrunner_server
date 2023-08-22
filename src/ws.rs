@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use futures_util::{SinkExt, StreamExt};
-use log::{error, info};
+use log::{error, info, warn};
 use messages::NewGame;
 
 use speedy::{Readable, Writable};
@@ -14,7 +14,6 @@ use crate::messages::{self, NetworkMessage};
 use crate::{messages::ClientMessage, Server};
 
 pub async fn new_websocket(ws: WebSocket, server: Arc<Server>) {
-    info!("New player connected");
     let (mut ws_tx, mut ws_rx) = ws.split();
 
     let (tx, rx) = mpsc::unbounded_channel();
@@ -56,7 +55,6 @@ pub async fn new_websocket(ws: WebSocket, server: Arc<Server>) {
                 }
                 Some(message) = rx.next() => {
                     let message = message.write_to_vec().unwrap();
-                    info!("Sent message: {:?}", message);
                     match ws_tx.send(Message::binary(message)).await {
                         Ok(_) => {}
                         Err(e) => {
@@ -74,30 +72,33 @@ pub async fn new_websocket(ws: WebSocket, server: Arc<Server>) {
             Ok(msg) => {
                 if msg.is_binary() {
                     match ClientMessage::read_from_buffer(msg.as_bytes()) {
-                        Ok(ClientMessage::PlayerName(name)) => {}
+                        Ok(ClientMessage::PlayerName(name)) => {
+                            info!("Player name: {}", name);
+                        }
                         Ok(ClientMessage::PlayerInput(input)) => {
                             let current_tick =
                                 server.tick.load(std::sync::atomic::Ordering::Relaxed);
 
                             if input.tick > current_tick + 2 {
-                                error!(
-                                    "Client sent input for future tick: {} > {}",
-                                    input.tick, current_tick
+                                warn!(
+                                    "Client ahead: input tick: {} server tick: {} diff: {}",
+                                    input.tick,
+                                    current_tick,
+                                    input.tick - current_tick
                                 );
                             }
 
                             if input.tick < current_tick {
                                 error!(
-                                    "Client sent input for past tick: {} > {}",
-                                    input.tick, current_tick
+                                    "Client behind: input tick: {} server tick: {} diff: {}",
+                                    input.tick,
+                                    current_tick,
+                                    current_tick - input.tick
                                 );
                             }
 
                             if input.tick == current_tick {
-                                info!(
-                                    "Client sent input for current tick: {} > {}",
-                                    input.tick, current_tick
-                                );
+                                info!("Input tick: {}", input.tick);
                             }
                         }
                         Err(e) => {

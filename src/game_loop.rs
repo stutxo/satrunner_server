@@ -6,36 +6,11 @@ use redis::Commands;
 use crate::Server;
 
 pub async fn game_loop(server: Arc<Server>) {
-    #[cfg(debug_assertions)]
-    let client = match redis::Client::open("redis://127.0.0.1/") {
-        Ok(client) => client,
-        Err(e) => {
-            info!("Failed to connect to Redis: {:?}", e);
-            return;
-        }
-    };
-    #[cfg(not(debug_assertions))]
-    let client = match redis::Client::open(
-        "redis://rain.bd7hwg.clustercfg.memorydb.eu-west-2.amazonaws.com",
-    ) {
-        Ok(client) => client,
-        Err(e) => {
-            info!("Failed to connect to Redis: {:?}", e);
-            return;
-        }
-    };
-
-    let connection = match client.get_connection() {
-        Ok(connection) => Some(connection),
-        Err(e) => {
-            info!("Failed to connect to Redis: {:?}", e);
-            None
-        }
-    };
-
     let mut high_scores: Vec<(String, u64)> = Vec::new();
 
-    if let Some(mut redis_client) = connection {
+    let redis_connect = redis();
+
+    if let Some(mut redis_client) = redis_connect {
         high_scores = redis_client
             .zrange_withscores("high_scores", 0, 4)
             .unwrap_or(Vec::new());
@@ -50,9 +25,32 @@ pub async fn game_loop(server: Arc<Server>) {
 
     loop {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        let previous = server
+        server
             .tick
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        info!("Tick: {}", previous);
+    }
+}
+
+fn redis() -> Option<redis::Connection> {
+    let client_url = if cfg!(debug_assertions) {
+        "redis://127.0.0.1/"
+    } else {
+        "redis://rain.bd7hwg.clustercfg.memorydb.eu-west-2.amazonaws.com"
+    };
+
+    let client = match redis::Client::open(client_url) {
+        Ok(client) => client,
+        Err(e) => {
+            info!("Failed to connect to Redis: {:?}", e);
+            return None;
+        }
+    };
+
+    match client.get_connection() {
+        Ok(connection) => Some(connection),
+        Err(e) => {
+            info!("Failed to get connection from Redis client: {:?}", e);
+            None
+        }
     }
 }

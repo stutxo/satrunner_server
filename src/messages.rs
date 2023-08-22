@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use speedy::{Readable, Writable};
 use uuid::Uuid;
 
