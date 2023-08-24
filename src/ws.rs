@@ -10,7 +10,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use uuid::Uuid;
 use warp::ws::{Message, WebSocket};
 
-use crate::messages::{self, NetworkMessage};
+use crate::messages::{self, NetworkMessage, SyncMessage};
 use crate::{messages::ClientMessage, Server};
 
 pub async fn new_websocket(ws: WebSocket, server: Arc<Server>) {
@@ -67,6 +67,8 @@ pub async fn new_websocket(ws: WebSocket, server: Arc<Server>) {
         }
     });
 
+    let mut adjustment_iteration = 0;
+
     while let Some(result) = ws_rx.next().await {
         match result {
             Ok(msg) => {
@@ -80,26 +82,27 @@ pub async fn new_websocket(ws: WebSocket, server: Arc<Server>) {
                                 server.tick.load(std::sync::atomic::Ordering::Relaxed);
 
                             if input.tick > current_tick + 2 {
-                                warn!(
-                                    "Client ahead: input tick: {} server tick: {} diff: {}",
-                                    input.tick,
-                                    current_tick,
-                                    input.tick - current_tick
-                                );
+                                let tick_adjustment = input.tick as i64 - current_tick as i64;
+
+                                adjustment_iteration += 1;
+                                let sync_msg = SyncMessage::new(tick_adjustment, current_tick);
+                                warn!("Client ahead: {:?}", sync_msg);
+                                tx_clone
+                                    .send(NetworkMessage::SyncClient(sync_msg))
+                                    .expect("Failed to send sync message");
+                            } else if input.tick < current_tick {
+                                let tick_adjustment = input.tick as i64 - current_tick as i64;
+
+                                adjustment_iteration += 1;
+                                let sync_msg = SyncMessage::new(tick_adjustment, current_tick);
+                                error!("Client behind: {:?}", sync_msg);
+                                tx_clone
+                                    .send(NetworkMessage::SyncClient(sync_msg))
+                                    .expect("Failed to send sync message");
                             }
 
-                            if input.tick < current_tick {
-                                error!(
-                                    "Client behind: input tick: {} server tick: {} diff: {}",
-                                    input.tick,
-                                    current_tick,
-                                    current_tick - input.tick
-                                );
-                            }
-
-                            if input.tick == current_tick {
-                                info!("Input tick: {}", input.tick);
-                            }
+                            //send input here
+                            info!("Input tick: {}", input.tick);
                         }
                         Err(e) => {
                             error!("error reading message: {}", e);
