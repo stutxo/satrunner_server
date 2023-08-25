@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use glam::{Vec2, Vec3};
 use log::{error, info};
@@ -11,7 +11,10 @@ pub const Y_BOUNDS: f32 = 500.0;
 pub const PLAYER_SPEED: f32 = 5.0;
 pub const FALL_SPEED: f32 = 3.0;
 
-use crate::Server;
+use crate::{
+    messages::{NetworkMessage, NewPos, PlayerState},
+    Server,
+};
 
 #[derive(Debug)]
 struct Players(Vec<Player>);
@@ -74,11 +77,14 @@ pub async fn game_loop(server: Arc<Server>) {
         *high_scores_update = high_scores;
     }
 
+    let mut server_tick = 0;
+
     loop {
         tokio::time::sleep(std::time::Duration::from_secs_f32(TICK_RATE)).await;
         server
             .tick
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        server_tick += 1;
 
         let mut new_player = server.player_names.lock().await;
 
@@ -94,38 +100,77 @@ pub async fn game_loop(server: Arc<Server>) {
             new_player.remove(&id);
         }
 
+        let mut new_positions: Vec<NewPos> = Vec::new();
+
         for player in &mut players.0 {
             let mut inputs = server.player_inputs.lock().await;
-            //input stuff
+            // input stuff
             if let Some(player_inputs) = inputs.get_mut(&player.id) {
-                let server_tick = server.tick.load(std::sync::atomic::Ordering::SeqCst);
-
                 for i in (0..player_inputs.len()).rev() {
                     let input_tick = player_inputs[i].tick;
                     if input_tick == server_tick {
-                        info!(
-                            "Processing input: {:?}, Player: {:?}",
-                            player_inputs[i], player.name
-                        );
                         let input = player_inputs[i].target;
                         player.target = Vec2::new(input[0], input[1]);
-                        info!(
-                            "new player target {:?}, current pos {:?}",
-                            player.target, player.pos
-                        );
                         player_inputs.remove(i);
                     }
                     if input_tick < server_tick {
-                        info!(
-                            "input behind!!!: {:?}, Player: {:?}",
-                            player_inputs[i], player.name
-                        );
                         player_inputs.remove(i);
                     }
                 }
             }
-            //movement stuff
+
             player.apply_input();
+
+            let new_pos = NewPos::new(
+                [player.target.x, player.target.y],
+                server_tick,
+                player.id,
+                [player.pos.x, player.pos.y],
+            );
+            new_positions.push(new_pos);
+        }
+
+        let connections = server.connections.read().await;
+
+        for (_, connection) in connections.iter() {
+            let message = NetworkMessage::GameUpdate(new_positions.clone());
+
+            if let Err(e) = connection.send(message) {
+                error!("Failed to send message over WebSocket: {}", e);
+            }
+        }
+
+        new_positions.clear();
+
+        if server_tick % 10 == 0 {
+            let connections = server.connections.read().await;
+            let connection_ids: HashSet<_> = connections.iter().map(|(id, _)| *id).collect();
+
+            players
+                .0
+                .retain(|player| connection_ids.contains(&player.id));
+
+            let mut player_state = Vec::new();
+
+            for player in &players.0 {
+                let player = PlayerState::new(
+                    [player.pos.x, player.pos.y],
+                    [player.target.x, player.target.y],
+                    0,
+                    Some(player.name.clone()),
+                    player.id,
+                );
+
+                player_state.push(player);
+            }
+
+            for (_, connection) in connections.iter() {
+                let message = NetworkMessage::GameState(player_state.clone());
+
+                if let Err(e) = connection.send(message) {
+                    error!("Failed to send message over WebSocket: {}", e);
+                }
+            }
         }
     }
 }
