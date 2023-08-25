@@ -3,8 +3,10 @@ use std::{
     sync::{atomic::AtomicU64, Arc},
 };
 
+use messages::PlayerInput;
 use rand::Rng;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{mpsc, Mutex, RwLock};
+
 use uuid::Uuid;
 use warp::Filter;
 use ws::new_websocket;
@@ -21,6 +23,8 @@ pub struct Server {
     pub tick: AtomicU64,
     pub high_scores: RwLock<Vec<(String, u64)>>,
     pub connections: RwLock<HashMap<Uuid, mpsc::UnboundedSender<NetworkMessage>>>,
+    pub player_inputs: Mutex<HashMap<Uuid, Vec<PlayerInput>>>,
+    pub player_names: Mutex<HashMap<Uuid, String>>,
 }
 
 impl Default for Server {
@@ -30,6 +34,8 @@ impl Default for Server {
             tick: AtomicU64::new(0),
             high_scores: RwLock::new(Vec::new()),
             connections: RwLock::new(HashMap::new()),
+            player_inputs: Mutex::new(HashMap::new()),
+            player_names: Mutex::new(HashMap::new()),
         }
     }
 }

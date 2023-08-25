@@ -5,7 +5,7 @@ use log::{error, info, warn};
 use messages::NewGame;
 
 use speedy::{Readable, Writable};
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, UnboundedSender};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use uuid::Uuid;
 use warp::ws::{Message, WebSocket};
@@ -67,15 +67,14 @@ pub async fn new_websocket(ws: WebSocket, server: Arc<Server>) {
         }
     });
 
-    let mut adjustment_iteration = 0;
-
     while let Some(result) = ws_rx.next().await {
         match result {
             Ok(msg) => {
                 if msg.is_binary() {
                     match ClientMessage::read_from_buffer(msg.as_bytes()) {
                         Ok(ClientMessage::PlayerName(name)) => {
-                            info!("Player name: {}", name);
+                            let mut player_names = server.player_names.lock().await;
+                            player_names.insert(client_id, name.clone());
                         }
                         Ok(ClientMessage::PlayerInput(input)) => {
                             let current_tick =
@@ -83,26 +82,20 @@ pub async fn new_websocket(ws: WebSocket, server: Arc<Server>) {
 
                             if input.tick > current_tick + 2 {
                                 let tick_adjustment = input.tick as i64 - current_tick as i64;
-
-                                adjustment_iteration += 1;
-                                let sync_msg = SyncMessage::new(tick_adjustment, current_tick);
-                                warn!("Client ahead: {:?}", sync_msg);
-                                tx_clone
-                                    .send(NetworkMessage::SyncClient(sync_msg))
-                                    .expect("Failed to send sync message");
+                                warn!("Client ahead: {:?}", tick_adjustment);
+                                sync_msg(tick_adjustment, current_tick, &tx_clone).await;
                             } else if input.tick < current_tick {
                                 let tick_adjustment = input.tick as i64 - current_tick as i64;
-
-                                adjustment_iteration += 1;
-                                let sync_msg = SyncMessage::new(tick_adjustment, current_tick);
-                                error!("Client behind: {:?}", sync_msg);
-                                tx_clone
-                                    .send(NetworkMessage::SyncClient(sync_msg))
-                                    .expect("Failed to send sync message");
+                                error!("Client behind: {:?}", tick_adjustment);
+                                sync_msg(tick_adjustment, current_tick, &tx_clone).await;
                             }
 
-                            //send input here
-                            info!("Input tick: {}", input.tick);
+                            {
+                                let mut inputs = server.player_inputs.lock().await;
+                                let player_inputs =
+                                    inputs.entry(client_id).or_insert_with(Vec::new);
+                                player_inputs.push(input);
+                            }
                         }
                         Err(e) => {
                             error!("error reading message: {}", e);
@@ -119,9 +112,16 @@ pub async fn new_websocket(ws: WebSocket, server: Arc<Server>) {
         };
     }
 
-    // info!("player disconnected: {}", client_id);
-    // {
-    //     let mut clients = clients.write().await;
-    //     clients.connection.remove(&client_id);
-    // }
+    info!("player disconnected: {}", client_id);
+    {
+        let mut connections = server.connections.write().await;
+        connections.remove(&client_id);
+    }
+}
+
+async fn sync_msg(tick_adjustment: i64, current_tick: u64, tx: &UnboundedSender<NetworkMessage>) {
+    let sync_msg = SyncMessage::new(tick_adjustment, current_tick);
+
+    tx.send(NetworkMessage::SyncClient(sync_msg))
+        .expect("Failed to send sync message");
 }
