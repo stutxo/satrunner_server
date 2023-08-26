@@ -94,6 +94,7 @@ pub struct PlayerState {
     pub score: usize,
     pub name: Option<String>,
     pub id: Uuid,
+    pub time_alive: u64,
 }
 
 impl PlayerState {
@@ -103,6 +104,7 @@ impl PlayerState {
         score: usize,
         name: Option<String>,
         id: Uuid,
+        time_alive: u64,
     ) -> Self {
         Self {
             pos,
@@ -110,6 +112,7 @@ impl PlayerState {
             score,
             name,
             id,
+            time_alive,
         }
     }
 }

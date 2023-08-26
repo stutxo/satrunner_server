@@ -3,6 +3,7 @@ use std::{collections::HashSet, sync::Arc};
 use glam::{Vec2, Vec3};
 use log::{error, info};
 use redis::Commands;
+use tokio::time::Instant;
 use uuid::Uuid;
 
 pub const TICK_RATE: f32 = 1. / 10.;
@@ -25,6 +26,7 @@ struct Player {
     name: String,
     pos: Vec3,
     target: Vec2,
+    pub spawn_time: Instant,
 }
 
 impl Player {
@@ -34,6 +36,7 @@ impl Player {
             name,
             pos: Vec3::new(0.0, 0.0, 0.0),
             target: Vec2::new(0.0, 0.0),
+            spawn_time: Instant::now(),
         }
     }
     pub fn apply_input(&mut self) {
@@ -159,6 +162,7 @@ pub async fn game_loop(server: Arc<Server>) {
                     0,
                     Some(player.name.clone()),
                     player.id,
+                    player.spawn_time.elapsed().as_secs(),
                 );
 
                 player_state.push(player);
