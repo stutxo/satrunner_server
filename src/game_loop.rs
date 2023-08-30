@@ -251,18 +251,18 @@ impl Objects {
                         let mut high_scores: Vec<(String, u64)> = Vec::new();
 
                         if let Some(redis_client) = server.redis.lock().await.as_mut() {
-                            let current_score_result: Result<Option<f64>, RedisError> =
+                            let current_score_result: Result<Option<u64>, RedisError> =
                                 redis_client.zscore("high_scores", &player.name);
                             match current_score_result {
                                 Ok(current_score) => {
                                     if current_score.map_or(true, |cs| {
-                                        cs > player.spawn_time.elapsed().as_secs_f64()
+                                        cs > player.spawn_time.elapsed().as_secs()
                                     }) {
                                         let _: () = redis_client
                                             .zadd(
                                                 "high_scores",
                                                 &player.name,
-                                                player.spawn_time.elapsed().as_secs_f64(),
+                                                player.spawn_time.elapsed().as_secs(),
                                             )
                                             .unwrap_or_else(|_| {
                                                 error!("Failed to add to high_scores");
@@ -320,9 +320,10 @@ pub async fn game_loop(server: Arc<Server>) {
     }
 
     if let Some(redis_client) = server.redis.lock().await.as_mut() {
-        high_scores = redis_client
-            .zrange_withscores("high_scores", 0, 4)
-            .unwrap_or(Vec::new());
+        match redis_client.zrange_withscores("high_scores", 0, 4) {
+            Ok(scores) => high_scores = scores,
+            Err(err) => error!("Failed to fetch high scores: {:?}", err),
+        }
     } else {
         error!("Redis client not initialized");
     }
@@ -330,6 +331,7 @@ pub async fn game_loop(server: Arc<Server>) {
     {
         let mut high_scores_update = server.high_scores.write().await;
         *high_scores_update = high_scores;
+        info!("High scores: {:?}", high_scores_update);
     }
 
     let mut server_tick = 0;
