@@ -4,14 +4,10 @@ use glam::{Vec2, Vec3};
 use log::{error, info};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
-use redis::{Commands, Connection, RedisError};
-use speedy::{Readable, Writable};
-use tokio::{sync::Mutex, time::Instant};
+use redis::{Commands, RedisError};
+use tokio::time::Instant;
 use uuid::Uuid;
-use zebedee_rust::{
-    ln_address::{LnAddress, LnPayment},
-    ZebedeeClient,
-};
+use zebedee_rust::ln_address::LnPayment;
 
 pub const TICK_RATE: f32 = 1. / 10.;
 pub const X_BOUNDS: f32 = 1000.0;
