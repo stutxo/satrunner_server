@@ -10,7 +10,6 @@ pub enum NetworkMessage {
     Ping,
     DamagePlayer(Damage),
     ScoreUpdate(Score),
-    PlayerInput(PlayerInput),
     SyncClient(SyncMessage),
 }
 

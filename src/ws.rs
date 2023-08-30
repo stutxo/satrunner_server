@@ -139,7 +139,7 @@ pub async fn new_websocket(ws: WebSocket, server: Arc<Server>) {
                             let current_tick =
                                 server.tick.load(std::sync::atomic::Ordering::Relaxed);
 
-                            if input.tick > current_tick + 4 {
+                            if input.tick > current_tick + 2 {
                                 let tick_adjustment = input.tick as i64 - current_tick as i64;
                                 warn!("Client ahead: {:?}", tick_adjustment);
                                 sync_msg(tick_adjustment, current_tick, &tx_clone).await;

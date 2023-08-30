@@ -358,11 +358,12 @@ pub async fn game_loop(server: Arc<Server>) {
             new_player.remove(&id);
         }
 
-        let mut new_positions: Vec<NewPos> = Vec::new();
+        let mut updated_players: HashSet<Uuid> = HashSet::new();
 
         for player in &mut players.0 {
             let mut inputs = server.player_inputs.lock().await;
             // input stuff
+
             if let Some(player_inputs) = inputs.get_mut(&player.id) {
                 for i in (0..player_inputs.len()).rev() {
                     let input_tick = player_inputs[i].tick;
@@ -370,6 +371,7 @@ pub async fn game_loop(server: Arc<Server>) {
                         let input = player_inputs[i].target;
                         player.target = Vec2::new(input[0], input[1]);
                         player_inputs.remove(i);
+                        updated_players.insert(player.id);
                     }
                     if input_tick < server_tick {
                         player_inputs.remove(i);
@@ -377,28 +379,34 @@ pub async fn game_loop(server: Arc<Server>) {
                 }
 
                 player.apply_input().await;
+            }
+        }
 
-                let new_pos = NewPos::new(
+        let new_positions: Vec<NewPos> = players
+            .0
+            .iter()
+            .filter(|player| updated_players.contains(&player.id))
+            .map(|player| {
+                NewPos::new(
                     [player.target.x, player.target.y],
                     server_tick,
                     player.id,
                     [player.pos.x, player.pos.y],
-                );
-                new_positions.push(new_pos);
+                )
+            })
+            .collect();
+
+        if !new_positions.is_empty() {
+            let connections = server.connections.read().await;
+
+            for (_, connection) in connections.iter() {
+                let message = NetworkMessage::GameUpdate(new_positions.clone());
+
+                if let Err(e) = connection.send(message) {
+                    error!("Failed to send message over WebSocket: {}", e);
+                }
             }
         }
-
-        let connections = server.connections.read().await;
-
-        for (_, connection) in connections.iter() {
-            let message = NetworkMessage::GameUpdate(new_positions.clone());
-
-            if let Err(e) = connection.send(message) {
-                error!("Failed to send message over WebSocket: {}", e);
-            }
-        }
-
-        new_positions.clear();
 
         objects.move_rain(server_tick).await;
         objects.move_bolts(server_tick).await;
