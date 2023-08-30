@@ -43,8 +43,6 @@ pub async fn new_websocket(ws: WebSocket, server: Arc<Server>) {
         server.objects.lock().await.clone().unwrap(),
     );
 
-    info!("Sending new game message: {:?}", new_game);
-
     tx_clone
         .send(NetworkMessage::NewGame(new_game))
         .expect("Failed to send new game message");
