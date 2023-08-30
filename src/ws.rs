@@ -9,7 +9,9 @@ use tokio::sync::mpsc::{self, UnboundedSender};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use uuid::Uuid;
 use warp::ws::{Message, WebSocket};
+use zebedee_rust::ln_address::LnAddress;
 
+use crate::game_loop::PlayerEntity;
 use crate::messages::{self, NetworkMessage, SyncMessage};
 use crate::{messages::ClientMessage, Server};
 
@@ -33,7 +35,13 @@ pub async fn new_websocket(ws: WebSocket, server: Arc<Server>) {
 
     let high_scores = server.high_scores.read().await.clone();
 
-    let new_game = NewGame::new(client_id, current_tick, seed, high_scores);
+    let new_game = NewGame::new(
+        client_id,
+        current_tick,
+        seed,
+        high_scores,
+        server.objects.lock().await.clone().unwrap(),
+    );
 
     info!("Sending new game message: {:?}", new_game);
 
@@ -73,8 +81,61 @@ pub async fn new_websocket(ws: WebSocket, server: Arc<Server>) {
                 if msg.is_binary() {
                     match ClientMessage::read_from_buffer(msg.as_bytes()) {
                         Ok(ClientMessage::PlayerName(name)) => {
-                            let mut player_names = server.player_names.lock().await;
-                            player_names.insert(client_id, name.clone());
+                            let ln_address = LnAddress {
+                                address: name.clone(),
+                            };
+
+                            let valid_email_address = ln_address.validate();
+
+                            let server_clone = server.clone();
+
+                            match valid_email_address {
+                                Ok(_) => {
+                                    tokio::spawn(async move {
+                                        info!("Validating LN address: {}", name);
+                                        let validate_response = server_clone
+                                            .zebedee_client
+                                            .lock()
+                                            .await
+                                            .validate_ln_address(&ln_address)
+                                            .await;
+
+                                        match validate_response {
+                                            Ok(res) => {
+                                                info!("Valid LN address: {:?}", res.data);
+                                                let player = PlayerEntity::new(
+                                                    client_id,
+                                                    name.to_string(),
+                                                    true,
+                                                )
+                                                .await;
+                                                let mut player_names =
+                                                    server_clone.player_names.lock().await;
+                                                player_names.insert(client_id, player);
+                                            }
+                                            Err(e) => {
+                                                error!("Invalid LN address: {}", e);
+                                                let player = PlayerEntity::new(
+                                                    client_id,
+                                                    name.to_string(),
+                                                    false,
+                                                )
+                                                .await;
+                                                let mut player_names =
+                                                    server_clone.player_names.lock().await;
+                                                player_names.insert(client_id, player);
+                                            }
+                                        };
+                                    });
+                                }
+                                Err(e) => {
+                                    error!("{:?}", e);
+                                    let player =
+                                        PlayerEntity::new(client_id, name.to_string(), false).await;
+                                    let mut player_names = server.player_names.lock().await;
+                                    player_names.insert(client_id, player.clone());
+                                }
+                            };
                         }
                         Ok(ClientMessage::PlayerInput(input)) => {
                             let current_tick =

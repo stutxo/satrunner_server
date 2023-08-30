@@ -9,6 +9,7 @@ pub enum NetworkMessage {
     NewGame(NewGame),
     Ping,
     DamagePlayer(Damage),
+    ScoreUpdate(Score),
     PlayerInput(PlayerInput),
     SyncClient(SyncMessage),
 }
@@ -67,6 +68,7 @@ pub struct NewGame {
     pub server_tick: u64,
     pub rng_seed: u64,
     pub high_scores: Vec<(String, u64)>,
+    pub objects: ObjectMsg,
 }
 
 impl NewGame {
@@ -74,16 +76,28 @@ impl NewGame {
         id: Uuid,
         server_tick: u64,
         rng_seed: u64,
-        // player_positions: HashMap<Uuid, PlayerPos>,
         high_scores: Vec<(String, u64)>,
+        objects: ObjectMsg,
     ) -> Self {
         Self {
             id,
             server_tick,
             rng_seed,
-            // player_positions,
             high_scores,
+            objects,
         }
+    }
+}
+
+#[derive(Readable, Writable, Debug, Clone)]
+pub struct ObjectMsg {
+    pub rain_pos: Vec<(u64, [f32; 2])>,
+    pub bolt_pos: Vec<(u64, [f32; 2])>,
+}
+
+impl ObjectMsg {
+    pub fn new(rain_pos: Vec<(u64, [f32; 2])>, bolt_pos: Vec<(u64, [f32; 2])>) -> Self {
+        Self { rain_pos, bolt_pos }
     }
 }
 
@@ -95,6 +109,7 @@ pub struct PlayerState {
     pub name: Option<String>,
     pub id: Uuid,
     pub time_alive: u64,
+    pub alive: bool,
 }
 
 impl PlayerState {
@@ -105,6 +120,7 @@ impl PlayerState {
         name: Option<String>,
         id: Uuid,
         time_alive: u64,
+        alive: bool,
     ) -> Self {
         Self {
             pos,
@@ -113,6 +129,7 @@ impl PlayerState {
             name,
             id,
             time_alive,
+            alive,
         }
     }
 }
@@ -122,9 +139,9 @@ pub struct Damage {
     pub id: Uuid,
     pub tick: Option<u64>,
     pub secs_alive: u64,
-    pub win: bool,
     pub high_scores: Option<Vec<(String, u64)>>,
     pub pos: [f32; 2],
+    pub score: usize,
 }
 
 impl Damage {
@@ -132,17 +149,30 @@ impl Damage {
         id: Uuid,
         tick: Option<u64>,
         secs_alive: u64,
-        win: bool,
         high_scores: Option<Vec<(String, u64)>>,
         pos: [f32; 2],
+        score: usize,
     ) -> Self {
         Self {
             id,
             tick,
             secs_alive,
-            win,
             high_scores,
             pos,
+            score,
         }
+    }
+}
+
+#[derive(Readable, Writable, Debug, Clone)]
+pub struct Score {
+    pub id: Uuid,
+    pub score: usize,
+    pub tick: u64,
+}
+
+impl Score {
+    pub fn new(id: Uuid, score: usize, tick: u64) -> Self {
+        Self { id, score, tick }
     }
 }

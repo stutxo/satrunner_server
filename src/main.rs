@@ -3,13 +3,15 @@ use std::{
     sync::{atomic::AtomicU64, Arc},
 };
 
-use messages::PlayerInput;
+use game_loop::PlayerEntity;
+use messages::{ObjectMsg, PlayerInput};
 use rand::Rng;
 use tokio::sync::{mpsc, Mutex, RwLock};
 
 use uuid::Uuid;
 use warp::Filter;
 use ws::new_websocket;
+use zebedee_rust::ZebedeeClient;
 
 use crate::game_loop::game_loop;
 use crate::messages::NetworkMessage;
@@ -24,11 +26,27 @@ pub struct Server {
     pub high_scores: RwLock<Vec<(String, u64)>>,
     pub connections: RwLock<HashMap<Uuid, mpsc::UnboundedSender<NetworkMessage>>>,
     pub player_inputs: Mutex<HashMap<Uuid, Vec<PlayerInput>>>,
-    pub player_names: Mutex<HashMap<Uuid, String>>,
+    pub player_names: Mutex<HashMap<Uuid, PlayerEntity>>,
+    pub redis: Mutex<Option<redis::Connection>>,
+    pub zebedee_client: Mutex<ZebedeeClient>,
+    pub objects: Mutex<Option<ObjectMsg>>,
 }
 
 impl Default for Server {
     fn default() -> Self {
+        #[cfg(not(debug_assertions))]
+        let zebedee_client = {
+            let api_key_json: String = env::var("ZBD_API_KEY").unwrap();
+            let value: Value = serde_json::from_str(&api_key_json).unwrap();
+
+            let api_key = value["ZBD_API_KEY"].as_str().unwrap().to_string();
+
+            Mutex::new(ZebedeeClient::new().apikey(api_key).build())
+        };
+
+        #[cfg(debug_assertions)]
+        let zebedee_client = Mutex::new(ZebedeeClient::new().apikey("test".to_string()).build());
+
         Self {
             seed: rand::thread_rng().gen::<u64>().into(),
             tick: AtomicU64::new(0),
@@ -36,6 +54,9 @@ impl Default for Server {
             connections: RwLock::new(HashMap::new()),
             player_inputs: Mutex::new(HashMap::new()),
             player_names: Mutex::new(HashMap::new()),
+            redis: Mutex::new(None),
+            zebedee_client,
+            objects: Mutex::new(None),
         }
     }
 }
