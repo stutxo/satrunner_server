@@ -1,4 +1,7 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use glam::{Vec2, Vec3};
 use log::{error, info};
@@ -33,6 +36,7 @@ pub struct PlayerEntity {
     pub score: usize,
     pub alive: bool,
     pub ln_address: bool,
+    pub prev_pos: HashMap<u64, Vec3>,
 }
 
 impl PlayerEntity {
@@ -46,6 +50,7 @@ impl PlayerEntity {
             score: 0,
             alive: true,
             ln_address,
+            prev_pos: HashMap::new(),
         }
     }
     pub async fn apply_input(&mut self) {
@@ -363,7 +368,6 @@ pub async fn game_loop(server: Arc<Server>) {
         for player in &mut players.0 {
             let mut inputs = server.player_inputs.lock().await;
             // input stuff
-
             if let Some(player_inputs) = inputs.get_mut(&player.id) {
                 for i in (0..player_inputs.len()).rev() {
                     let input_tick = player_inputs[i].tick;
@@ -374,11 +378,22 @@ pub async fn game_loop(server: Arc<Server>) {
                         updated_players.insert(player.id);
                     }
                     if input_tick < server_tick {
+                        let input = player_inputs[i].target;
+                        player.target = Vec2::new(input[0], input[1]);
+                        if let Some(pos) = player.prev_pos.get(&input_tick) {
+                            player.pos = *pos;
+                        }
+                        for _ in input_tick..server_tick {
+                            player.apply_input().await;
+                        }
                         player_inputs.remove(i);
+                        updated_players.insert(player.id);
                     }
                 }
 
                 player.apply_input().await;
+
+                player.prev_pos.insert(server_tick, player.pos);
             }
         }
 
