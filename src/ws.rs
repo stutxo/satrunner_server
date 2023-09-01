@@ -152,7 +152,9 @@ pub async fn new_websocket(ws: WebSocket, server: Arc<Server>) {
                                     error!("Client behind: {:?}", tick_adjustment);
                                     sync_msg(tick_adjustment, current_tick, &tx_clone).await;
                                 }
-                                Ordering::Equal => {}
+                                Ordering::Equal => {
+                                    info!("Client in sync {:?}", client_id);
+                                }
                             }
 
                             {
