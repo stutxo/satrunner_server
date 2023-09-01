@@ -59,6 +59,7 @@ pub struct PlayerInput {
     pub target: [f32; 2],
     pub id: Uuid,
     pub tick: u64,
+    pub in_game: bool,
 }
 
 #[derive(Readable, Writable, Debug, Clone)]

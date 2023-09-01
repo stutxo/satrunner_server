@@ -181,6 +181,12 @@ impl Objects {
                     self.rain_pos.remove(i);
                     player.alive = false;
 
+                    let mut inputs = server.player_inputs.lock().await;
+
+                    if let Some(player_inputs) = inputs.get_mut(&player.id) {
+                        player_inputs.clear();
+                    }
+
                     let highscore_msg = server.high_scores.read().await;
 
                     let damage_update_msg = NetworkMessage::DamagePlayer(Damage::new(
@@ -231,6 +237,11 @@ impl Objects {
 
                     if player.score == 21 {
                         player.alive = false;
+                        let mut inputs = server.player_inputs.lock().await;
+
+                        if let Some(player_inputs) = inputs.get_mut(&player.id) {
+                            player_inputs.clear();
+                        }
 
                         if player.ln_address {
                             let payment = LnPayment {
@@ -361,6 +372,11 @@ pub async fn game_loop(server: Arc<Server>) {
         let mut player_added = Vec::new();
 
         for (id, player_entity) in new_player.iter() {
+            let mut inputs = server.player_inputs.lock().await;
+
+            if let Some(player_inputs) = inputs.get_mut(id) {
+                player_inputs.clear();
+            }
             players.0.push(player_entity.clone());
             player_added.push(*id);
         }
@@ -373,8 +389,10 @@ pub async fn game_loop(server: Arc<Server>) {
 
         for player in &mut players.0 {
             let mut inputs = server.player_inputs.lock().await;
+
             // input stuff
             if let Some(player_inputs) = inputs.get_mut(&player.id) {
+                info!("iputs {:?}", player_inputs);
                 for i in (0..player_inputs.len()).rev() {
                     let input_tick = player_inputs[i].tick;
                     if input_tick == server_tick {

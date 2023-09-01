@@ -157,11 +157,13 @@ pub async fn new_websocket(ws: WebSocket, server: Arc<Server>) {
                                 }
                             }
 
-                            {
-                                let mut inputs = server.player_inputs.lock().await;
-                                let player_inputs =
-                                    inputs.entry(client_id).or_insert_with(Vec::new);
-                                player_inputs.push(input);
+                            if input.in_game {
+                                {
+                                    let mut inputs = server.player_inputs.lock().await;
+                                    let player_inputs =
+                                        inputs.entry(client_id).or_insert_with(Vec::new);
+                                    player_inputs.push(input);
+                                }
                             }
                         }
                         Err(e) => {
