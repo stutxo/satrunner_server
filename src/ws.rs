@@ -4,6 +4,8 @@ use futures_util::{SinkExt, StreamExt};
 use log::{error, info, warn};
 use messages::NewGame;
 
+use std::cmp::Ordering;
+
 use speedy::{Readable, Writable};
 use tokio::sync::mpsc::{self, UnboundedSender};
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -139,14 +141,18 @@ pub async fn new_websocket(ws: WebSocket, server: Arc<Server>) {
                             let current_tick =
                                 server.tick.load(std::sync::atomic::Ordering::Relaxed);
 
-                            if input.tick > current_tick {
-                                let tick_adjustment = input.tick as i64 - current_tick as i64;
-                                warn!("Client ahead: {:?}", tick_adjustment);
-                                sync_msg(tick_adjustment, current_tick, &tx_clone).await;
-                            } else if input.tick < current_tick {
-                                let tick_adjustment = input.tick as i64 - current_tick as i64;
-                                error!("Client behind: {:?}", tick_adjustment);
-                                sync_msg(tick_adjustment, current_tick, &tx_clone).await;
+                            match input.tick.cmp(&current_tick) {
+                                Ordering::Greater => {
+                                    let tick_adjustment = input.tick as i64 - current_tick as i64;
+                                    warn!("Client ahead: {:?}", tick_adjustment);
+                                    sync_msg(tick_adjustment, current_tick, &tx_clone).await;
+                                }
+                                Ordering::Less => {
+                                    let tick_adjustment = input.tick as i64 - current_tick as i64;
+                                    error!("Client behind: {:?}", tick_adjustment);
+                                    sync_msg(tick_adjustment, current_tick, &tx_clone).await;
+                                }
+                                Ordering::Equal => {}
                             }
 
                             {
