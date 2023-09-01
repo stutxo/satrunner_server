@@ -15,7 +15,7 @@ use zebedee_rust::ln_address::LnPayment;
 pub const TICK_RATE: f32 = 1. / 10.;
 pub const X_BOUNDS: f32 = 1000.0;
 pub const Y_BOUNDS: f32 = 500.0;
-pub const PLAYER_SPEED: f32 = 5.0;
+pub const PLAYER_SPEED: f32 = 2.5;
 pub const FALL_SPEED: f32 = 3.0;
 
 use crate::{
@@ -70,8 +70,8 @@ impl PlayerEntity {
         if direction.length() > tolerance {
             let mut speed = PLAYER_SPEED;
 
-            if direction.y > 0.0 {
-                speed /= 2.0;
+            if direction.y < 0.0 {
+                speed *= 2.0;
             }
 
             direction.normalize() * speed
