@@ -348,7 +348,6 @@ pub async fn game_loop(server: Arc<Server>) {
     let mut server_tick = 0;
 
     loop {
-        tokio::time::sleep(std::time::Duration::from_secs_f32(TICK_RATE)).await;
         server
             .tick
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -466,6 +465,7 @@ pub async fn game_loop(server: Arc<Server>) {
                 }
             }
         }
+        tokio::time::sleep(std::time::Duration::from_secs_f32(TICK_RATE)).await;
     }
 }
 
