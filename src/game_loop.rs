@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    env,
     sync::Arc,
 };
 
@@ -392,7 +393,6 @@ pub async fn game_loop(server: Arc<Server>) {
 
             // input stuff
             if let Some(player_inputs) = inputs.get_mut(&player.id) {
-                info!("iputs {:?}", player_inputs);
                 for i in (0..player_inputs.len()).rev() {
                     let input_tick = player_inputs[i].tick;
                     if input_tick == server_tick {
@@ -409,6 +409,10 @@ pub async fn game_loop(server: Arc<Server>) {
                         }
                         for _ in input_tick..server_tick {
                             player.apply_input().await;
+
+                            //do i have to do this? roll back objects too?
+                            // let mut player_temp = Players(vec![player.clone()]);
+                            // objects.collision(&mut player_temp, server.clone()).await;
                         }
                         player_inputs.remove(i);
                         updated_players.insert(player.id);
@@ -488,10 +492,10 @@ pub async fn game_loop(server: Arc<Server>) {
 }
 
 fn redis() -> Option<redis::Connection> {
-    let client_url = if cfg!(debug_assertions) {
-        "redis://127.0.0.1/"
+    let client_url: String = if cfg!(debug_assertions) {
+        "redis://127.0.0.1/".to_string()
     } else {
-        "redis://rain.bd7hwg.clustercfg.memorydb.eu-west-2.amazonaws.com"
+        env::var("REDIS_CLUSTER").unwrap()
     };
 
     let client = match redis::Client::open(client_url) {
