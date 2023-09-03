@@ -247,8 +247,8 @@ impl Objects {
                         if player.ln_address {
                             let payment = LnPayment {
                                 ln_address: player.name.clone(),
-                                amount: String::from("2100000"),
-                                ..Default::default()
+                                amount: String::from("210000"),
+                                comment: String::from("https://rain.run"),
                             };
 
                             let server_clone_2 = server_clone.clone();
