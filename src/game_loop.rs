@@ -16,7 +16,7 @@ use zebedee_rust::ln_address::LnPayment;
 pub const TICK_RATE: f32 = 1. / 10.;
 pub const X_BOUNDS: f32 = 1000.0;
 pub const Y_BOUNDS: f32 = 500.0;
-pub const PLAYER_SPEED: f32 = 1.0;
+pub const PLAYER_SPEED: f32 = 2.0;
 pub const FALL_SPEED: f32 = 3.0;
 
 use crate::{
