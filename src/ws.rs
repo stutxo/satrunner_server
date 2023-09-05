@@ -75,8 +75,6 @@ pub async fn new_websocket(ws: WebSocket, server: Arc<Server>) {
         }
     });
 
-    let mut input_checked = Vec::new();
-
     while let Some(result) = ws_rx.next().await {
         match result {
             Ok(msg) => {
@@ -143,34 +141,26 @@ pub async fn new_websocket(ws: WebSocket, server: Arc<Server>) {
                             let current_tick =
                                 server.tick.load(std::sync::atomic::Ordering::Relaxed);
 
-                            if !input_checked.contains(&input.tick) {
-                                match input.tick.cmp(&current_tick) {
-                                    Ordering::Greater => {
-                                        let tick_adjustment =
-                                            input.tick as i64 - current_tick as i64;
-                                        warn!("Client ahead: {:?}", tick_adjustment);
-                                        sync_msg(tick_adjustment, current_tick, &tx_clone).await;
-                                        input_checked.push(input.tick);
-                                    }
-                                    Ordering::Less => {
-                                        let tick_adjustment =
-                                            input.tick as i64 - current_tick as i64;
-                                        error!("Client behind: {:?}", tick_adjustment);
-                                        sync_msg(tick_adjustment, current_tick, &tx_clone).await;
-                                        input_checked.push(input.tick);
-                                    }
-                                    Ordering::Equal => {
-                                        input_checked.push(input.tick);
-                                    }
+                            match input.tick.cmp(&current_tick) {
+                                Ordering::Greater => {
+                                    let tick_adjustment = input.tick as i64 - current_tick as i64;
+                                    warn!("Client ahead: {:?}", tick_adjustment);
+                                    sync_msg(tick_adjustment, current_tick, &tx_clone).await;
                                 }
+                                Ordering::Less => {
+                                    let tick_adjustment = input.tick as i64 - current_tick as i64;
+                                    error!("Client behind: {:?}", tick_adjustment);
+                                    sync_msg(tick_adjustment, current_tick, &tx_clone).await;
+                                }
+                                Ordering::Equal => {}
+                            }
 
-                                if input.in_game {
-                                    {
-                                        let mut inputs = server.player_inputs.lock().await;
-                                        let player_inputs =
-                                            inputs.entry(client_id).or_insert_with(Vec::new);
-                                        player_inputs.push(input);
-                                    }
+                            if input.in_game {
+                                {
+                                    let mut inputs = server.player_inputs.lock().await;
+                                    let player_inputs =
+                                        inputs.entry(client_id).or_insert_with(Vec::new);
+                                    player_inputs.push(input);
                                 }
                             }
                         }
