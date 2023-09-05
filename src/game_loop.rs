@@ -236,6 +236,33 @@ impl Objects {
                         }
                     }
 
+                    if player.ln_address {
+                        let payment = LnPayment {
+                            ln_address: player.name.clone(),
+                            amount: String::from("1000"),
+                            comment: String::from("https://rain.run"),
+                        };
+
+                        let server_clone_2 = server_clone.clone();
+
+                        tokio::spawn(async move {
+                            let payment_response = server_clone_2
+                                .zebedee_client
+                                .lock()
+                                .await
+                                .pay_ln_address(&payment)
+                                .await;
+
+                            match payment_response {
+                                Ok(response) => info!(
+                                    "Payment sent to {:?}: {:?}",
+                                    payment.ln_address, response.data
+                                ),
+                                Err(e) => info!("Payment failed {:?}", e),
+                            }
+                        });
+                    }
+
                     if player.score == 21 {
                         player.alive = false;
                         let mut inputs = server.player_inputs.lock().await;
