@@ -423,8 +423,6 @@ pub async fn game_loop(server: Arc<Server>) {
             }
 
             let player_entity_clone = player_entity.clone();
-            let player_url: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
-            let player_url_clone = player_url.clone();
 
             let server_clone = server.clone();
 
