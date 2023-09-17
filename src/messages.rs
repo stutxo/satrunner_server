@@ -11,6 +11,7 @@ pub enum NetworkMessage {
     DamagePlayer(Damage),
     ScoreUpdate(Score),
     SyncClient(SyncMessage),
+    BadgeUrl(BadgeUrl),
 }
 
 #[derive(Readable, Writable, Debug, Clone)]
@@ -178,5 +179,17 @@ pub struct Score {
 impl Score {
     pub fn new(id: Uuid, score: usize, tick: u64) -> Self {
         Self { id, score, tick }
+    }
+}
+
+#[derive(Readable, Writable, Debug, Clone)]
+pub struct BadgeUrl {
+    pub id: Uuid,
+    pub url: Vec<u8>,
+}
+
+impl BadgeUrl {
+    pub fn new(id: Uuid, url: Vec<u8>) -> Self {
+        Self { id, url }
     }
 }

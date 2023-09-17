@@ -4,12 +4,13 @@ use std::{
     sync::Arc,
 };
 
+use futures_util::lock;
 use glam::{Vec2, Vec3};
-use log::{error, info};
+use log::{error, info, warn};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use redis::{Commands, RedisError};
-use tokio::time::Instant;
+use tokio::{sync::Mutex, time::Instant};
 use uuid::Uuid;
 use zebedee_rust::ln_address::LnPayment;
 
@@ -29,7 +30,7 @@ pub const PLAYER_SPEED: f32 = 2.5;
 pub const FALL_SPEED: f32 = 3.0;
 
 use crate::{
-    messages::{Damage, NetworkMessage, NewPos, ObjectMsg, PlayerState, Score},
+    messages::{BadgeUrl, Damage, NetworkMessage, NewPos, ObjectMsg, PlayerState, Score},
     Server,
 };
 
@@ -406,70 +407,110 @@ pub async fn game_loop(server: Arc<Server>) {
 
         players.0.retain(|player| player.alive);
 
-        let mut new_player = server.player_names.lock().await;
+        let mut new_player = {
+            let locked_names = server.player_names.lock().await;
+
+            locked_names.clone()
+        };
 
         let mut player_added = Vec::new();
 
-        for (id, player_entity) in new_player.iter() {
+        for (id, player_entity) in new_player.iter_mut() {
             let mut inputs = server.player_inputs.lock().await;
 
             if let Some(player_inputs) = inputs.get_mut(id) {
                 player_inputs.clear();
             }
-            players.0.push(player_entity.clone());
-            player_added.push(*id);
+
+            let player_entity_clone = player_entity.clone();
+            let player_url: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+            let player_url_clone = player_url.clone();
+
+            let server_clone = server.clone();
 
             if player_entity.ln_address {
-                let profile = nip05::get_profile(&player_entity.name, None).await.unwrap();
+                tokio::spawn(async move {
+                    if let Ok(fetched_profile) =
+                        nip05::get_profile(&player_entity_clone.name, None).await
+                    {
+                        info!("{:?}", fetched_profile);
 
-                info!("{:?}", profile);
+                        let my_keys = Keys::generate();
 
-                let my_keys = Keys::generate();
+                        let client = Client::new(&my_keys);
+                        client
+                            .add_relay("wss://nostr-dev.zbd.gg", None)
+                            .await
+                            .unwrap();
 
-                let client = Client::new(&my_keys);
-                client
-                    .add_relay("wss://nostr-dev.zbd.gg", None)
-                    .await
-                    .unwrap();
+                        client.connect().await;
 
-                client.connect().await;
+                        let subscription = Filter::new().kind(Kind::BadgeDefinition);
 
-                let subscription = Filter::new().kind(Kind::BadgeDefinition);
+                        client.subscribe(vec![subscription]).await;
 
-                client.subscribe(vec![subscription]).await;
+                        client
+                            .handle_notifications(|notification| async {
+                                if let RelayPoolNotification::Event(_url, incoming_event) =
+                                    notification
+                                {
+                                if incoming_event.pubkey == fetched_profile.public_key {
+                                    let mut rain_badge = false;
 
-                client
-                    .handle_notifications(|notification| async {
-                        if let RelayPoolNotification::Event(_url, incoming_event) = notification {
-                            let mut is_meme_lord_event = false;
-
-                            for tag in &incoming_event.tags {
-                                if Tag::Name("MemeLord".to_string()) == *tag {
-                                    info!("MemeLord event found");
-                                    is_meme_lord_event = true;
-                                }
-                            }
-
-                            if is_meme_lord_event {
-                                for tag in &incoming_event.tags {
-                                    if let Tag::Image(unchecked_url, _) = tag {
-                                        info!("Image URL: {}", unchecked_url);
+                                    for tag in &incoming_event.tags {
+                                    if Tag::Name("MemeLord".to_string()) == *tag {
+                                        info!("rain.run badge found");
+                                        rain_badge = true;
                                     }
                                 }
-                            }
-                        }
 
-                        Ok(false)
-                    })
-                    .await
-                    .unwrap();
+                                    for tag in &incoming_event.tags {
 
-                let _ = client.disconnect().await;
+                                    if rain_badge {
+                                            if let Tag::Image(url, _) = tag {
+                                                let resp = reqwest::get(url.to_string()).await.unwrap();
+
+                                                    let bytes = resp.bytes().await.unwrap();
+
+                                                    let image_data: &[u8] = &bytes;
+
+                                                let connections = server_clone.connections.read().await;
+                                                for (_, connection) in connections.iter() {
+                                                    let badge_url = BadgeUrl::new(
+                                                        player_entity_clone.id,
+                                                        image_data.clone().to_vec());
+
+                                                    let message = NetworkMessage::BadgeUrl(badge_url);
+
+                                                    if let Err(e) = connection.send(message) {
+                                                        error!("Failed to send message over WebSocket: {}", e);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        }
+                                    }
+
+
+                                }
+
+                                Ok(false)
+                            })
+                            .await
+                            .unwrap();
+
+                        let _ = client.disconnect().await;
+                    } else {
+                        warn!("Could not fetch profile for {}", &player_entity_clone.name);
+                    }
+                });
+
+                players.0.push(player_entity.clone());
+                player_added.push(*id);
             }
-        }
 
-        for id in player_added {
-            new_player.remove(&id);
+            let mut locked_names = server.player_names.lock().await;
+            locked_names.remove(id);
         }
 
         let mut updated_players: HashSet<Uuid> = HashSet::new();
