@@ -48,7 +48,11 @@ impl Default for Server {
         };
 
         #[cfg(debug_assertions)]
-        let zebedee_client = Mutex::new(ZebedeeClient::new().apikey("test".to_string()).build());
+        let zebedee_client = Mutex::new(
+            ZebedeeClient::new()
+                .apikey("ZBD_API_KEY".to_string())
+                .build(),
+        );
 
         Self {
             seed: rand::thread_rng().gen::<u64>().into(),

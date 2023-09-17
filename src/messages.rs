@@ -110,8 +110,10 @@ pub struct PlayerState {
     pub id: Uuid,
     pub time_alive: u64,
     pub alive: bool,
+    pub badge_url: Option<String>,
 }
 
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 impl PlayerState {
     pub fn new(
         pos: [f32; 2],
@@ -121,6 +123,7 @@ impl PlayerState {
         id: Uuid,
         time_alive: u64,
         alive: bool,
+        badge_url: Option<String>,
     ) -> Self {
         Self {
             pos,
@@ -130,6 +133,7 @@ impl PlayerState {
             id,
             time_alive,
             alive,
+            badge_url,
         }
     }
 }

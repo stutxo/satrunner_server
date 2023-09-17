@@ -107,6 +107,7 @@ pub async fn new_websocket(ws: WebSocket, server: Arc<Server>) {
                                                     client_id,
                                                     name.to_string(),
                                                     true,
+                                                    None,
                                                 )
                                                 .await;
                                                 let mut player_names =
@@ -118,7 +119,14 @@ pub async fn new_websocket(ws: WebSocket, server: Arc<Server>) {
                                                 let player = PlayerEntity::new(
                                                     client_id,
                                                     name.to_string(),
-                                                    false,
+                                                    ///
+                                                    /// ///
+                                                    /// /
+                                                    /// /
+                                                    ///
+                                                    /// change this back to false
+                                                    true,
+                                                    None,
                                                 )
                                                 .await;
                                                 let mut player_names =
@@ -131,7 +139,8 @@ pub async fn new_websocket(ws: WebSocket, server: Arc<Server>) {
                                 Err(e) => {
                                     error!("{:?}", e);
                                     let player =
-                                        PlayerEntity::new(client_id, name.to_string(), false).await;
+                                        PlayerEntity::new(client_id, name.to_string(), false, None)
+                                            .await;
                                     let mut player_names = server.player_names.lock().await;
                                     player_names.insert(client_id, player.clone());
                                 }

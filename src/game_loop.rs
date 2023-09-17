@@ -13,6 +13,15 @@ use tokio::time::Instant;
 use uuid::Uuid;
 use zebedee_rust::ln_address::LnPayment;
 
+use nostr_sdk::prelude::*;
+
+use std::str::FromStr;
+
+use nostr::{
+    nips::{nip05, nip58},
+    prelude::*,
+};
+
 pub const TICK_RATE: f32 = 1. / 10.;
 pub const X_BOUNDS: f32 = 1000.0;
 pub const Y_BOUNDS: f32 = 500.0;
@@ -38,10 +47,11 @@ pub struct PlayerEntity {
     pub alive: bool,
     pub ln_address: bool,
     pub prev_pos: HashMap<u64, Vec3>,
+    pub badge_url: Option<String>,
 }
 
 impl PlayerEntity {
-    pub async fn new(id: Uuid, name: String, ln_address: bool) -> Self {
+    pub async fn new(id: Uuid, name: String, ln_address: bool, badge_url: Option<String>) -> Self {
         Self {
             id,
             name,
@@ -52,6 +62,7 @@ impl PlayerEntity {
             alive: true,
             ln_address,
             prev_pos: HashMap::new(),
+            badge_url,
         }
     }
     pub async fn apply_input(&mut self) {
@@ -407,6 +418,54 @@ pub async fn game_loop(server: Arc<Server>) {
             }
             players.0.push(player_entity.clone());
             player_added.push(*id);
+
+            if player_entity.ln_address {
+                let profile = nip05::get_profile(&player_entity.name, None).await.unwrap();
+
+                info!("{:?}", profile);
+
+                let my_keys = Keys::generate();
+
+                let client = Client::new(&my_keys);
+                client
+                    .add_relay("wss://nostr-dev.zbd.gg", None)
+                    .await
+                    .unwrap();
+
+                client.connect().await;
+
+                let subscription = Filter::new().kind(Kind::BadgeDefinition);
+
+                client.subscribe(vec![subscription]).await;
+
+                client
+                    .handle_notifications(|notification| async {
+                        if let RelayPoolNotification::Event(_url, incoming_event) = notification {
+                            let mut is_meme_lord_event = false;
+
+                            for tag in &incoming_event.tags {
+                                if Tag::Name("MemeLord".to_string()) == *tag {
+                                    info!("MemeLord event found");
+                                    is_meme_lord_event = true;
+                                }
+                            }
+
+                            if is_meme_lord_event {
+                                for tag in &incoming_event.tags {
+                                    if let Tag::Image(unchecked_url, _) = tag {
+                                        info!("Image URL: {}", unchecked_url);
+                                    }
+                                }
+                            }
+                        }
+
+                        Ok(false)
+                    })
+                    .await
+                    .unwrap();
+
+                let _ = client.disconnect().await;
+            }
         }
 
         for id in player_added {
@@ -502,6 +561,7 @@ pub async fn game_loop(server: Arc<Server>) {
                     player.id,
                     player.spawn_time.elapsed().as_secs(),
                     player.alive,
+                    player.badge_url.clone(),
                 );
 
                 player_state.push(player);
