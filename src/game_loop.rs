@@ -170,7 +170,7 @@ impl Objects {
 
         let x_position: f32 = rng.gen_range(-X_BOUNDS..X_BOUNDS);
 
-        if tick % 5 == 0 && tick % 60 != 0 {
+        if tick % 5 == 0 && tick % 30 != 0 {
             let pos_start = Vec3::new(x_position, Y_BOUNDS, 0.0);
             let new_pos = ObjectPos {
                 tick,
@@ -196,7 +196,7 @@ impl Objects {
 
         let x_position: f32 = rng.gen_range(-X_BOUNDS..X_BOUNDS);
 
-        if tick % 60 == 0 {
+        if tick % 30 == 0 {
             let pos_start = Vec3::new(x_position, Y_BOUNDS, 0.0);
             let new_pos = ObjectPos {
                 tick,
@@ -442,7 +442,7 @@ impl Objects {
 
                                 let body_str = format!(
                                     r#"{{
-                                    "query": "\n mutation GiveBadge {{\n giveBadge(\n definition: \"zbdreamers-nostr-dev\",\n target: \"{}\"\n ) {{\n ok\n }}\n }}\n ",
+                                    "query": "\n mutation GiveBadge {{\n giveBadge(\n definition: \"zbdreamers-rain-run-test\",\n target: \"{}\"\n ) {{\n ok\n }}\n }}\n ",
                                     "operationName": "GiveBadge"
                                 }}"#,
                                     pubkey
