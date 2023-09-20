@@ -97,6 +97,7 @@ impl PlayerEntity {
 pub struct Objects {
     pub rain_pos: Vec<ObjectPos>,
     pub bolt_pos: Vec<ObjectPos>,
+    pub badge_pos: Vec<ObjectPos>,
     pub rng_seed: u64,
 }
 
@@ -110,6 +111,7 @@ impl Objects {
         Self {
             rain_pos: Vec::new(),
             bolt_pos: Vec::new(),
+            badge_pos: Vec::new(),
             rng_seed,
         }
     }
@@ -126,7 +128,13 @@ impl Objects {
             .map(|obj| (obj.tick, [obj.pos.x, obj.pos.y]))
             .collect();
 
-        let objects = ObjectMsg::new(rain_with_ticks, bolt_with_ticks);
+        let badge_with_ticks: Vec<(u64, [f32; 2])> = self
+            .badge_pos
+            .iter()
+            .map(|obj| (obj.tick, [obj.pos.x, obj.pos.y]))
+            .collect();
+
+        let objects = ObjectMsg::new(rain_with_ticks, bolt_with_ticks, badge_with_ticks);
 
         server.objects.lock().await.replace(objects);
     }
@@ -176,6 +184,32 @@ impl Objects {
         }
 
         self.bolt_pos.retain(|object| {
+            object.pos.y >= -Y_BOUNDS
+                && object.pos.y <= Y_BOUNDS
+                && object.pos.x >= -X_BOUNDS
+                && object.pos.x <= X_BOUNDS
+        });
+    }
+    pub async fn move_badge(&mut self, tick: u64) {
+        let seed = self.rng_seed ^ tick;
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+
+        let x_position: f32 = rng.gen_range(-X_BOUNDS..X_BOUNDS);
+
+        if tick % 50 == 0 {
+            let pos_start = Vec3::new(x_position, Y_BOUNDS, 0.0);
+            let new_pos = ObjectPos {
+                tick,
+                pos: pos_start,
+            };
+            self.badge_pos.push(new_pos);
+        }
+
+        for object in self.badge_pos.iter_mut() {
+            object.pos.y += FALL_SPEED * -1.;
+        }
+
+        self.badge_pos.retain(|object| {
             object.pos.y >= -Y_BOUNDS
                 && object.pos.y <= Y_BOUNDS
                 && object.pos.x >= -X_BOUNDS
@@ -365,6 +399,34 @@ impl Objects {
                     }
                 }
             }
+
+            for i in (0..self.badge_pos.len()).rev() {
+                let object = &self.badge_pos[i];
+                if (object.pos.x - player.pos.x).abs() < 10.0
+                    && (object.pos.y - player.pos.y).abs() < 10.0
+                {
+                    let object_tick = object.tick;
+                    self.badge_pos.remove(i);
+
+                    player.score += 1;
+
+                    info!("Player {:?}{:?} hit by badge", player.name, player.id,);
+
+                    let connections = server.connections.read().await;
+
+                    for (_, connection) in connections.iter() {
+                        info!("Sending score update to {:?}", player.id);
+                        let score_update_msg = NetworkMessage::ScoreUpdate(Score::new(
+                            player.id,
+                            player.score,
+                            object_tick,
+                        ));
+                        if let Err(e) = connection.send(score_update_msg.clone()) {
+                            error!("Failed to send message over WebSocket: {}", e);
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -502,10 +564,10 @@ pub async fn game_loop(server: Arc<Server>) {
                         warn!("Could not fetch profile for {}", &player_entity_clone.name);
                     }
                 });
-
-                players.0.push(player_entity.clone());
-                player_added.push(*id);
             }
+
+            players.0.push(player_entity.clone());
+            player_added.push(*id);
 
             let mut locked_names = server.player_names.lock().await;
             locked_names.remove(id);
@@ -578,6 +640,7 @@ pub async fn game_loop(server: Arc<Server>) {
 
         objects.move_rain(server_tick).await;
         objects.move_bolts(server_tick).await;
+        objects.move_badge(server_tick).await;
         objects.collision(&mut players, server.clone()).await;
         objects.update_global_objects(server.clone()).await;
 

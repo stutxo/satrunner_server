@@ -94,11 +94,20 @@ impl NewGame {
 pub struct ObjectMsg {
     pub rain_pos: Vec<(u64, [f32; 2])>,
     pub bolt_pos: Vec<(u64, [f32; 2])>,
+    pub badge_pos: Vec<(u64, [f32; 2])>,
 }
 
 impl ObjectMsg {
-    pub fn new(rain_pos: Vec<(u64, [f32; 2])>, bolt_pos: Vec<(u64, [f32; 2])>) -> Self {
-        Self { rain_pos, bolt_pos }
+    pub fn new(
+        rain_pos: Vec<(u64, [f32; 2])>,
+        bolt_pos: Vec<(u64, [f32; 2])>,
+        badge_pos: Vec<(u64, [f32; 2])>,
+    ) -> Self {
+        Self {
+            rain_pos,
+            bolt_pos,
+            badge_pos,
+        }
     }
 }
 
