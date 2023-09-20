@@ -425,6 +425,46 @@ impl Objects {
                             error!("Failed to send message over WebSocket: {}", e);
                         }
                     }
+
+                    let player_name = player.name.clone();
+
+                    if player.ln_address {
+                        tokio::spawn(async move {
+                            if let Ok(fetched_profile) =
+                                nip05::get_profile(&player_name, None).await
+                            {
+                                let url = "https://voltorb.zebedee.io/api/v1/social";
+                                let bearer_token = env::var("BEARER_TOKEN").unwrap();
+
+                                let client = reqwest::Client::new();
+
+                                let pubkey = fetched_profile.public_key;
+
+                                let body_str = format!(
+                                    r#"{{
+                                    "query": "\n mutation GiveBadge {{\n giveBadge(\n definition: \"zbdreamers-nostr-dev\",\n target: \"{}\"\n ) {{\n ok\n }}\n }}\n ",
+                                    "operationName": "GiveBadge"
+                                }}"#,
+                                    pubkey
+                                );
+
+                                let response = client
+                                    .post(url)
+                                    .header("Accept-Encoding", "gzip, deflate, br")
+                                    .header("Authorization", bearer_token)
+                                    .header("Content-Type", "application/json")
+                                    .header("Origin", "https://voltorb.zebedee.io")
+                                    .header("DNT", "1")
+                                    .header("Connection", "keep-alive")
+                                    .body(body_str)
+                                    .send()
+                                    .await
+                                    .unwrap();
+
+                                warn!("Response: {:?}", response.text().await);
+                            }
+                        });
+                    }
                 }
             }
         }
@@ -518,11 +558,13 @@ pub async fn game_loop(server: Arc<Server>) {
                                     let mut rain_badge = false;
 
                                     for tag in &incoming_event.tags {
-                                    if Tag::Name("MemeLord".to_string()) == *tag {
+                                        info!("{:?}", tag);
+                                    if Tag::Name("Nostr dev".to_string()) == *tag {
                                         info!("rain.run badge found");
                                         rain_badge = true;
                                     }
                                 }
+
 
                                     for tag in &incoming_event.tags {
 
